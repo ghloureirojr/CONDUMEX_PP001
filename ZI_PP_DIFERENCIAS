@@ -30,6 +30,11 @@ define root custom entity ZI_PP_DIFERENCIAS
       @Consumption.valueHelpDefinition: [{ entity: { name: 'I_CompanyCode', element: 'CompanyCode' } }]
   key Company       : abap.char(4);  // Filter Sociedad
 
+      @UI.lineItem  : [{ position: 25 }]
+      @UI.identification: [{ position: 25 }]
+      @EndUserText.label: 'Lista de materiales'
+  key BomNumber     : abap.char(8);
+
       @UI.lineItem  : [{ position: 30 }]
       @UI.identification: [{ position: 30 }]
       @EndUserText.label: 'Material'

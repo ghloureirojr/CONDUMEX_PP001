@@ -39,4 +39,3 @@ define view entity ZI_PP_GET_ECN_BOM_WRAPPER
 }
 where
       aeoi.ChangeNumberObjectType = cast( '02' as abap.numc( 2 ))
-  and _material.ProductGroup      = '100200'

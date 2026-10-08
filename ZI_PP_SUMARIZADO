@@ -1,0 +1,140 @@
+@EndUserText.label: 'Root view List Report Sumarizado'
+@ObjectModel.query.implementedBy: 'ABAP:ZCL_PP_QUERY_SUMARIZADO'
+@UI.headerInfo: { typeName: 'Diferencias ECN Sumarizado ',
+                  typeNamePlural: 'Diferencias ECN Sumarizado ',
+                  title: { value: 'ItemParDebe' },
+                  description: { value: 'EcnNumber' } }
+
+define root custom entity ZI_PP_SUMARIZADO
+
+{
+
+      @UI.facet     : [{ id       : 'Detalle',
+                    purpose  : #STANDARD,
+                    type     : #IDENTIFICATION_REFERENCE,
+                    label    : 'Detalle de la Posición',
+                    position : 10 }]
+
+      @Consumption.filter: { multipleSelections: false, mandatory: true }
+      @UI.selectionField: [{ position: 10 }]
+      @UI.lineItem  : [{ position: 10 }]
+      @UI.identification: [{ position: 10 }]
+      @EndUserText.label: 'Folio ECN'
+      @Consumption.valueHelpDefinition: [{ entity: { name: 'ZI_PP_AENR_WRAPPER', element: 'Aennr' } }]
+  key EcnNumber     : abap.char(12); // 20 Folio ECN
+
+      @Consumption.filter: { multipleSelections: false, mandatory: true }
+      @UI.selectionField: [{ position: 20 }]
+      @UI.lineItem  : [{ position: 20 }]
+      @UI.identification: [{ position: 20 }]
+      @EndUserText.label: 'Sociedad'
+      @Consumption.valueHelpDefinition: [{ entity: { name: 'I_CompanyCode', element: 'CompanyCode' } }]
+  key Company       : abap.char(4);  // Filter Sociedad
+
+      // Mantidos como chave para identificar o registro de cada BOM,
+      // mas não exibidos no Sumarizado (conforme EF)
+      @UI.hidden    : true
+      @EndUserText.label: 'Material'
+  key Material      : abap.char(40);
+
+      @UI.hidden    : true
+      @EndUserText.label: 'Posición BOM'
+  key PosBOM        : abap.char(4);
+
+      @UI.lineItem  : [{ position: 30 }]
+      @UI.identification: [{ position: 30 }]
+      @EndUserText.label: 'Item Dice'
+      ItemDice      : abap.char(40); // 1  Item Dice
+
+      @Semantics.quantity.unitOfMeasure: 'UnitDice'
+      @UI.lineItem  : [{ position: 40 }]
+      @UI.identification: [{ position: 40 }]
+      @EndUserText.label: 'Cantidad'
+      QtyDice       : abap.quan( 13, 3 ); // 2  Cantidad
+
+      @UI.lineItem  : [{ position: 50 }]
+      @UI.identification: [{ position: 50 }]
+      @EndUserText.label: 'Unidad de Medida'
+      UnitDice      : abap.unit(3);  // 3  Unidad de Medida
+
+      @UI.lineItem  : [{ position: 60 }]
+      @UI.identification: [{ position: 60 }]
+      @EndUserText.label: 'Grupo de Artículos'
+      ArtGroupDice  : abap.char(9);  // 4  Grupo de Artículos
+
+      @UI.lineItem  : [{ position: 70 }]
+      @UI.identification: [{ position: 70 }]
+      @EndUserText.label: 'Descripción'
+      DescDice      : abap.char(40); // 5  Descripción
+
+      @UI.lineItem  : [{ position: 80 }]
+      @UI.identification: [{ position: 80 }]
+      @EndUserText.label: 'Tipo de Material'
+      MatTypeDice   : abap.char(4);  // 6  Tipo de Material
+
+      @UI.lineItem  : [{ position: 90 }]
+      @UI.identification: [{ position: 90 }]
+      @EndUserText.label: 'Volumen Semanal'
+      WeeklyVolDice : abap.dec( 13, 3 ); // 7  Volumen Semanal
+
+      @UI.lineItem  : [{ position: 100 }]
+      @UI.identification: [{ position: 100 }]
+      @EndUserText.label: 'Volumen Total'
+      TotalVolDice  : abap.dec( 13, 3 ); // 8  Volumen Total
+
+      @UI.lineItem  : [{ position: 110 }]
+      @UI.identification: [{ position: 110 }]
+      @EndUserText.label: 'Item Debe'
+      ItemDebe      : abap.char(40); // 9  Item Debe
+
+      @Semantics.quantity.unitOfMeasure: 'UnitDebe'
+      @UI.lineItem  : [{ position: 120 }]
+      @UI.identification: [{ position: 120 }]
+      @EndUserText.label: 'Cantidad'
+      QtyDebe       : abap.quan( 13, 3 ); // 10 Cantidad
+
+      @UI.lineItem  : [{ position: 130 }]
+      @UI.identification: [{ position: 130 }]
+      @EndUserText.label: 'Unidad de Medida'
+      UnitDebe      : abap.unit(3);  // 11 Unidad de Medida
+
+      @UI.lineItem  : [{ position: 140 }]
+      @UI.identification: [{ position: 140 }]
+      @EndUserText.label: 'Grupo de Artículos'
+      ArtGroupDebe  : abap.char(9);  // 12 Grupo de Artículos
+
+      @UI.lineItem  : [{ position: 150 }]
+      @UI.identification: [{ position: 150 }]
+      @EndUserText.label: 'Descripción'
+      DescDebe      : abap.char(40); // 13 Descripción
+
+      @UI.lineItem  : [{ position: 160 }]
+      @UI.identification: [{ position: 160 }]
+      @EndUserText.label: 'Tipo de Material'
+      MatTypeDebe   : abap.char(4);  // 14 Tipo de Material
+
+      @UI.lineItem  : [{ position: 170 }]
+      @UI.identification: [{ position: 170 }]
+      @EndUserText.label: 'Volumen Semanal'
+      WeeklyVolDebe : abap.dec( 13, 3 ); // 15 Volumen Semanal
+
+      @UI.lineItem  : [{ position: 180 }]
+      @UI.identification: [{ position: 180 }]
+      @EndUserText.label: 'Volumen Total'
+      TotalVolDebe  : abap.dec( 13, 3 ); // 16 Volumen Total
+
+      @UI.lineItem  : [{ position: 190 }]
+      @UI.identification: [{ position: 190 }]
+      @EndUserText.label: 'Diferencia'
+      Diferencia    : abap.char(1);  // 19 Diferencia
+
+      @UI.lineItem  : [{ position: 200 }]
+      @UI.identification: [{ position: 200 }]
+      @EndUserText.label: 'Item Parent Dice'
+      ItemParDice   : abap.char(40); // 21 Item Parent Dice
+
+      @UI.lineItem  : [{ position: 210 }]
+      @UI.identification: [{ position: 210 }]
+      @EndUserText.label: 'Item Parent Debe'
+      ItemParDebe   : abap.char(40); // 22 Item Parent Debe
+}

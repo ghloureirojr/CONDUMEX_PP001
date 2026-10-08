@@ -1,0 +1,42 @@
+@AbapCatalog.viewEnhancementCategory: [#NONE]
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Get ECN y BOM'
+@Metadata.ignorePropagatedAnnotations: true
+define view entity ZI_PP_GET_ECN_BOM_WRAPPER
+  as select from    I_ChangeMstrObjectMgmtRecord as aeoi
+    left outer join aenr                         as _aenr     on _aenr.aennr = aeoi.ChangeNumber
+
+    left outer join aedt                         as _aedt     on  _aedt.aennr = aeoi.ChangeNumber
+                                                              and _aedt.aedtz = aeoi.ChgNmbrAlternativeDateCounter
+
+    inner join      I_MaterialBOMLink            as _mast     on  (
+            _mast.BillOfMaterialVariantUsage                                           = '1'
+            or _mast.BillOfMaterialVariantUsage                                        = '3'
+          )
+                                                              and _mast.BillOfMaterial = substring(
+      aeoi.ObjMgmtRecdObjectInternalID, 2, 8
+    )
+
+    inner join      I_Product                    as _material on _material.Product = _mast.Material
+
+    left outer join I_ProductText                as _text     on  _text.Product  = _mast.Material
+                                                              and _text.Language = $session.system_language
+{
+  key aeoi.ChangeNumber                as EcnNumber,
+  key aeoi.ChangeNumberObjectType      as TpObjt,
+  key aeoi.ObjMgmtRecdObjectInternalID as BomObjectId,
+      _mast.Plant                      as Plant,
+      _mast.BillOfMaterial             as BomNumber,
+      _mast.Material                   as StructureInMaterial,
+      _text.ProductName                as StructureInDesc,
+      _material.ProductGroup           as GrupoArticulos,
+      _aenr.andat                      as FechaCreaECN,
+      case
+        when aeoi.ChgNmbrAlternativeDateCounter = '000'
+          then _aenr.datuv
+        else _aedt.datuv
+      end                              as EcnIssueDate
+}
+where
+      aeoi.ChangeNumberObjectType = cast( '02' as abap.numc( 2 ))
+  and _material.ProductGroup      = '100200'

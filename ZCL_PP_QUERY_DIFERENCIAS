@@ -17,6 +17,7 @@ CLASS ZCL_PP_QUERY_DIFERENCIAS DEFINITION
              EcnNumber TYPE zi_pp_diferencias-EcnNumber,
              Material  TYPE zi_pp_diferencias-Material,
              PosBOM    TYPE zi_pp_diferencias-PosBOM,
+             BomNumber TYPE zi_pp_diferencias-BomNumber,
              ItemDice  TYPE zi_pp_diferencias-ItemDice,
              QtyDice   TYPE zi_pp_diferencias-QtyDice,
              UnitDice  TYPE zi_pp_diferencias-UnitDice,
@@ -69,7 +70,8 @@ CLASS ZCL_PP_QUERY_DIFERENCIAS DEFINITION
     DATA: rg_company   TYPE if_rap_query_filter=>tt_range_option,
           rg_ecnnumber TYPE if_rap_query_filter=>tt_range_option,
           rg_material  TYPE if_rap_query_filter=>tt_range_option,
-          rg_posbom    TYPE if_rap_query_filter=>tt_range_option.
+          rg_posbom    TYPE if_rap_query_filter=>tt_range_option,
+          rg_bomnumber TYPE if_rap_query_filter=>tt_range_option.
 
     METHODS get_filter
       IMPORTING it_pairs        TYPE if_rap_query_filter=>tt_name_range_pairs
@@ -173,6 +175,10 @@ CLASS zcl_pp_query_diferencias IMPLEMENTATION.
       DELETE lt_item WHERE posbom NOT IN rg_posbom.
     ENDIF.
 
+    IF rg_bomnumber IS NOT INITIAL.
+      DELETE lt_item WHERE bomnumber NOT IN rg_bomnumber.
+    ENDIF.
+
     CHECK lt_item IS NOT INITIAL.
 
     " --- Mestre de materiais dos dois lados numa única leitura ---
@@ -234,6 +240,7 @@ CLASS zcl_pp_query_diferencias IMPLEMENTATION.
         EcnNumber = <fs_item>-ecnnumber
         Company   = rg_company[ 1 ]-low
         Material  = <fs_item>-Material
+        BomNumber = <fs_item>-BomNumber
         PosBOM    = <fs_item>-PosBOM
         ItemDice  = <fs_item>-ItemDice
         QtyDice   = <fs_item>-QtyDice
@@ -299,6 +306,7 @@ CLASS zcl_pp_query_diferencias IMPLEMENTATION.
         rg_ecnnumber     = get_filter( it_pairs = lt_pairs iv_name = 'ECNNUMBER' ).
         rg_material      = get_filter( it_pairs = lt_pairs iv_name = 'MATERIAL' ).
         rg_posbom        = get_filter( it_pairs = lt_pairs iv_name = 'POSBOM' ).
+        rg_bomnumber     = get_filter( it_pairs = lt_pairs iv_name = 'BOMNUMBER' ).
 
         lt_result = get_data(  ).
 
@@ -546,6 +554,7 @@ CLASS zcl_pp_query_diferencias IMPLEMENTATION.
       <fs_item>-ecnnumber = ls_bom_item-ecnnumber.
       <fs_item>-material  = ls_bom_item-matnr.
       <fs_item>-posbom    = ls_pos-posnr.
+      <fs_item>-bomnumber = ls_bom_item-stlnr.
 
       READ TABLE lt_debe_idx INTO DATA(ls_debe)
         WITH TABLE KEY stlnr = ls_pos-stlnr posnr = ls_pos-posnr.

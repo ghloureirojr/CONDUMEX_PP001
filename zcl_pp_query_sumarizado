@@ -1,0 +1,667 @@
+CLASS zcl_pp_query_sumarizado DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+    INTERFACES if_rap_query_provider .
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+    TYPES: BEGIN OF ty_material_wrp,
+             material TYPE matnr,
+           END OF ty_material_wrp,
+           BEGIN OF ty_classification,
+             objctkey TYPE cuobn,
+           END OF ty_classification,
+           BEGIN OF ty_item,
+             EcnNumber TYPE zi_pp_sumarizado-EcnNumber,
+             Material  TYPE zi_pp_sumarizado-Material,
+             PosBOM    TYPE zi_pp_sumarizado-PosBOM,
+             ItemDice  TYPE zi_pp_sumarizado-ItemDice,
+             QtyDice   TYPE zi_pp_sumarizado-QtyDice,
+             UnitDice  TYPE zi_pp_sumarizado-UnitDice,
+             ItemDebe  TYPE zi_pp_sumarizado-ItemDebe,
+             QtyDebe   TYPE zi_pp_sumarizado-QtyDebe,
+             UnitDebe  TYPE zi_pp_sumarizado-UnitDebe,
+           END OF ty_item,
+           BEGIN OF ty_volumes,
+             material  TYPE matnr,
+             weeklyvol TYPE p LENGTH 13 DECIMALS 3,
+             totalvol  TYPE p LENGTH 13 DECIMALS 3,
+           END OF ty_volumes,
+           BEGIN OF ty_bom,
+             ecnnumber TYPE aennr,
+             objkt     TYPE aeobjekt,
+             stlnr     TYPE stnum,
+             stlal     TYPE stlal,
+             matnr     TYPE matnr,
+             werks     TYPE werks_d,
+             datuv     TYPE datuv,
+           END OF ty_bom,
+           BEGIN OF ty_pos,
+             stlnr TYPE stnum,
+             posnr TYPE sposn,
+           END OF ty_pos,
+           BEGIN OF ty_side,
+             stlnr TYPE stnum,
+             posnr TYPE sposn,
+             idnrk TYPE idnrk,
+             menge TYPE kmpmg,
+             meins TYPE meins,
+           END OF ty_side,
+           BEGIN OF ty_stas,
+             stlnr TYPE stnum,
+             stlal TYPE stalt,
+             stlkn TYPE stlkn,
+           END OF ty_stas,
+           "! Chave do material de cabeçalho (Item Parent Debe) por ECN
+           BEGIN OF ty_parent_key,
+             ecnnumber TYPE aennr,
+             matnr     TYPE matnr,
+           END OF ty_parent_key,
+           "! Item Parent Dice resolvido para cada material de cabeçalho
+           BEGIN OF ty_parent,
+             ecnnumber TYPE aennr,
+             matnr     TYPE matnr,   " Item Parent Debe
+             idnrk     TYPE idnrk,   " Item Parent Dice
+           END OF ty_parent,
+
+           tt_bom          TYPE STANDARD TABLE OF ty_bom                  WITH DEFAULT KEY,
+           tt_result       TYPE STANDARD TABLE OF zi_pp_sumarizado        WITH DEFAULT KEY,
+           tt_diferencias  TYPE STANDARD TABLE OF zi_pp_diferencias_wrp   WITH DEFAULT KEY,
+           tt_volumes      TYPE STANDARD TABLE OF ty_volumes              WITH DEFAULT KEY,
+           tt_item         TYPE STANDARD TABLE OF ty_item                 WITH DEFAULT KEY,
+           tt_parent       TYPE SORTED   TABLE OF ty_parent               WITH UNIQUE KEY ecnnumber matnr,
+           tt_material_wrp TYPE STANDARD TABLE OF ty_material_wrp         WITH DEFAULT KEY.
+
+    DATA: rg_company   TYPE if_rap_query_filter=>tt_range_option,
+          rg_ecnnumber TYPE if_rap_query_filter=>tt_range_option,
+          rg_material  TYPE if_rap_query_filter=>tt_range_option,
+          rg_posbom    TYPE if_rap_query_filter=>tt_range_option.
+
+    METHODS get_filter
+      IMPORTING it_pairs        TYPE if_rap_query_filter=>tt_name_range_pairs
+                iv_name         TYPE string
+      RETURNING VALUE(rv_range) TYPE if_rap_query_filter=>tt_range_option.
+
+    METHODS get_data
+      RETURNING VALUE(rt_result) TYPE tt_result.
+
+    METHODS get_plants_by_company
+      IMPORTING iv_company       TYPE bukrs
+      RETURNING VALUE(rt_plants) TYPE if_rap_query_filter=>tt_range_option.
+
+    METHODS get_volumes
+      IMPORTING it_material       TYPE tt_material_wrp
+                it_plant_range    TYPE if_rap_query_filter=>tt_range_option
+      RETURNING VALUE(rt_volumes) TYPE tt_volumes.   " Material, WeeklyVol, TotalVol
+
+    METHODS build_bom_scope
+      IMPORTING it_diferencias TYPE tt_diferencias
+      RETURNING VALUE(rt_boms) TYPE tt_bom.
+
+    METHODS get_bom_items
+      IMPORTING it_boms         TYPE tt_bom
+      RETURNING VALUE(rt_items) TYPE tt_item.
+
+    "! Item Parent Dice: material que saiu da posição do BOM avô,
+    "! onde o material de cabeçalho (Item Parent Debe) entra como componente
+    METHODS get_parent_dice
+      IMPORTING it_items          TYPE tt_item
+      RETURNING VALUE(rt_parents) TYPE tt_parent.
+ENDCLASS.
+
+
+
+CLASS zcl_pp_query_sumarizado IMPLEMENTATION.
+  METHOD get_filter.
+    IF line_exists( it_pairs[ name = iv_name ] ).
+      rv_range = it_pairs[ name = iv_name ]-range.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD get_data.
+    DATA: lt_ecn_keys    TYPE SORTED TABLE OF ty_classification WITH NON-UNIQUE KEY objctkey,
+          lt_diferencias TYPE tt_diferencias,
+          lt_item        TYPE tt_item,
+          lt_matinfo     TYPE HASHED TABLE OF zi_pp_material_wrapper WITH UNIQUE KEY Material.
+
+*    CONSTANTS c_tpmat TYPE mtart VALUE 'HALB'.
+
+    CHECK rg_ecnnumber IS NOT INITIAL AND rg_company IS NOT INITIAL.
+
+    SELECT SINGLE Valor
+      FROM z_c_pp_parametros
+      WHERE IdNum    = '01'
+        AND Programa = 'ZCL_PP_QUERY_SUMARIZADO'
+        AND Campo    = 'MTART'
+      INTO @DATA(lv_mtart).
+
+    SELECT *
+      FROM zi_pp_diferencias_wrp
+      WHERE ChangeNumber IN @rg_ecnnumber
+      INTO TABLE @lt_diferencias.
+
+    CHECK lt_diferencias IS NOT INITIAL.
+
+    " --- Exclui ECNs com status Informativo / Inactivo (classificação, KLART 025) ---
+    lt_ecn_keys = CORRESPONDING #( lt_diferencias MAPPING objctkey = ChangeNumber ).
+    DELETE ADJACENT DUPLICATES FROM lt_ecn_keys.
+
+    SELECT DISTINCT objectkey
+      FROM zi_pp_classification
+      FOR ALL ENTRIES IN @lt_ecn_keys
+      WHERE ObjectKey      = @lt_ecn_keys-objctkey
+        AND ClassType      = '025'
+        AND CharcName      = 'ECN_ESTATUS_ECN'
+        AND CharcValueText IN ( 'INFORMATIVO', 'INACTIVO' )   " valores literais ainda não confirmados
+      INTO TABLE @DATA(lt_ecn_bloqueados).
+
+    IF lt_ecn_bloqueados IS NOT INITIAL.
+      DATA(rg_ecn_bloqueados) = VALUE if_rap_query_filter=>tt_range_option(
+                                        FOR wa IN lt_ecn_bloqueados ( sign   = 'I'
+                                                                      option = 'EQ'
+                                                                      low    = wa-objectkey ) ).
+
+      DELETE lt_diferencias WHERE ChangeNumber IN rg_ecn_bloqueados.
+    ENDIF.
+
+    CHECK lt_diferencias IS NOT INITIAL.
+
+*    DATA(rg_plants) = get_plants_by_company( CONV #( rg_company[ 1 ]-low ) ).
+
+    " --- Escopo de BOMs do ECN (AEOI/MAST via wrapper + resolução do DATUV) ---
+    DATA(lt_boms) = build_bom_scope( lt_diferencias ).
+
+*    DELETE lt_boms WHERE werks NOT IN rg_plants.
+
+    " Chave da object page: restringe o escopo antes de ler STAS/STPO
+    IF rg_material IS NOT INITIAL.
+      DELETE lt_boms WHERE matnr NOT IN rg_material.
+    ENDIF.
+
+    CHECK lt_boms IS NOT INITIAL.
+
+    lt_item = get_bom_items( lt_boms ).
+
+    IF rg_posbom IS NOT INITIAL.
+      DELETE lt_item WHERE posbom NOT IN rg_posbom.
+    ENDIF.
+
+    CHECK lt_item IS NOT INITIAL.
+
+    " --- Mestre de materiais dos dois lados numa única leitura ---
+    DATA(lt_material_todos) = VALUE tt_material_wrp(
+      FOR wa_debe IN lt_item ( material = wa_debe-itemdebe ) ).
+
+    APPEND LINES OF VALUE tt_material_wrp(
+      FOR wa_dice IN lt_item ( material = wa_dice-itemdice ) ) TO lt_material_todos.
+
+    DELETE lt_material_todos WHERE material IS INITIAL.
+    SORT lt_material_todos BY material.
+    DELETE ADJACENT DUPLICATES FROM lt_material_todos COMPARING material.
+
+    CHECK lt_material_todos IS NOT INITIAL.
+
+    SELECT *
+      FROM zi_pp_material_wrapper
+      FOR ALL ENTRIES IN @lt_material_todos
+      WHERE Material = @lt_material_todos-material
+      INTO TABLE @DATA(lt_matinfo_all).
+
+    CHECK lt_matinfo_all IS NOT INITIAL.
+
+    SORT lt_matinfo_all BY Material.
+    DELETE ADJACENT DUPLICATES FROM lt_matinfo_all COMPARING Material.
+
+    lt_matinfo = lt_matinfo_all.
+
+    " --- Filtro TIPO_MATERIAL: vale para o lado Debe; nas posições eliminadas
+    "     pelo ECN (sem Debe) o critério recai sobre o lado Dice ---
+    LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<fs_check>).
+      DATA(lv_mat_aval) = COND matnr( WHEN <fs_check>-itemdebe IS NOT INITIAL
+                                      THEN <fs_check>-itemdebe
+                                      ELSE <fs_check>-itemdice ).
+
+      READ TABLE lt_matinfo INTO DATA(ls_mat_aval)
+        WITH TABLE KEY Material = lv_mat_aval.
+
+      IF sy-subrc <> 0 OR ls_mat_aval-MaterialType <> lv_mtart.
+        CLEAR <fs_check>-ecnnumber.   " marca para remoção
+      ENDIF.
+    ENDLOOP.
+
+    DELETE lt_item WHERE ecnnumber IS INITIAL.
+
+    CHECK lt_item IS NOT INITIAL.
+
+    " --- Volumes por sociedade (todas as plantas) ---
+    DATA(rg_plants) = get_plants_by_company( CONV #( rg_company[ 1 ]-low ) ).
+
+    DATA(lt_volumes) = get_volumes( it_material    = lt_material_todos
+                                    it_plant_range = rg_plants ).
+
+    SORT lt_volumes BY material.
+
+    " --- Item Parent Dice (campo 21 da EF) ---
+    DATA(lt_parents) = get_parent_dice( lt_item ).
+
+    " --- Montagem do resultado ---
+    LOOP AT lt_item ASSIGNING FIELD-SYMBOL(<fs_item>).
+      DATA(ls_result) = VALUE zi_pp_sumarizado(
+        EcnNumber   = <fs_item>-ecnnumber
+        Company     = rg_company[ 1 ]-low
+        Material    = <fs_item>-Material
+        PosBOM      = <fs_item>-PosBOM
+        ItemDice    = <fs_item>-ItemDice
+        QtyDice     = <fs_item>-QtyDice
+        UnitDice    = <fs_item>-UnitDice
+        ItemDebe    = <fs_item>-ItemDebe
+        QtyDebe     = <fs_item>-QtyDebe
+        UnitDebe    = <fs_item>-UnitDebe
+        " EF: o Material do Detallado corresponde ao Item Parent Debe
+        ItemParDebe = <fs_item>-Material
+        Diferencia  = COND #( WHEN <fs_item>-itemdice <> <fs_item>-itemdebe
+                                OR <fs_item>-qtydice  <> <fs_item>-qtydebe
+                              THEN abap_true ) ).
+
+      READ TABLE lt_parents INTO DATA(ls_parent)
+        WITH TABLE KEY ecnnumber = <fs_item>-ecnnumber
+                       matnr     = <fs_item>-material.
+
+      IF sy-subrc = 0.
+        ls_result-ItemParDice = ls_parent-idnrk.
+      ENDIF.
+
+      IF <fs_item>-itemdice IS NOT INITIAL.
+        READ TABLE lt_matinfo ASSIGNING FIELD-SYMBOL(<fs_matdice>)
+          WITH TABLE KEY Material = <fs_item>-itemdice.
+
+        IF sy-subrc = 0.
+          ls_result-ArtGroupDice = <fs_matdice>-MaterialGroup.
+          ls_result-DescDice     = <fs_matdice>-MaterialDesc.
+          ls_result-MatTypeDice  = <fs_matdice>-MaterialType.
+        ENDIF.
+
+        READ TABLE lt_volumes INTO DATA(ls_vol_dice)
+          WITH KEY material = <fs_item>-itemdice BINARY SEARCH.
+
+        IF sy-subrc = 0.
+          ls_result-WeeklyVolDice = ls_vol_dice-weeklyvol.
+          ls_result-TotalVolDice  = ls_vol_dice-totalvol.
+        ENDIF.
+      ENDIF.
+
+      IF <fs_item>-itemdebe IS NOT INITIAL.
+        READ TABLE lt_matinfo ASSIGNING FIELD-SYMBOL(<fs_matdebe>)
+          WITH TABLE KEY Material = <fs_item>-itemdebe.
+
+        IF sy-subrc = 0.
+          ls_result-ArtGroupDebe = <fs_matdebe>-MaterialGroup.
+          ls_result-DescDebe     = <fs_matdebe>-MaterialDesc.
+          ls_result-MatTypeDebe  = <fs_matdebe>-MaterialType.
+        ENDIF.
+
+        READ TABLE lt_volumes INTO DATA(ls_vol_debe)
+          WITH KEY material = <fs_item>-itemdebe BINARY SEARCH.
+
+        IF sy-subrc = 0.
+          ls_result-WeeklyVolDebe = ls_vol_debe-weeklyvol.
+          ls_result-TotalVolDebe  = ls_vol_debe-totalvol.
+        ENDIF.
+      ENDIF.
+
+      APPEND ls_result TO rt_result.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD if_rap_query_provider~select.
+    DATA: lt_result TYPE STANDARD TABLE OF zi_pp_sumarizado,
+          lt_page   TYPE STANDARD TABLE OF zi_pp_sumarizado.
+
+    TRY.
+        TRY.
+            " Read Filters
+            DATA(lt_pairs) = io_request->get_filter( )->get_as_ranges( ).
+          CATCH cx_rap_query_filter_no_range INTO DATA(lx_filter).
+        ENDTRY.
+
+        rg_company   = get_filter( it_pairs = lt_pairs iv_name = 'COMPANY' ).
+        rg_ecnnumber = get_filter( it_pairs = lt_pairs iv_name = 'ECNNUMBER' ).
+        rg_material  = get_filter( it_pairs = lt_pairs iv_name = 'MATERIAL' ).
+        rg_posbom    = get_filter( it_pairs = lt_pairs iv_name = 'POSBOM' ).
+
+        lt_result = get_data( ).
+
+        IF io_request->is_total_numb_of_rec_requested( ).
+          io_response->set_total_number_of_records( CONV int8( lines( lt_result ) ) ).
+        ENDIF.
+
+        DATA(lo_paging)    = io_request->get_paging( ).
+        DATA(lv_offset)    = lo_paging->get_offset( ).
+        DATA(lv_page_size) = lo_paging->get_page_size( ).
+
+        IF lv_offset > 0 OR lv_page_size <> if_rap_query_paging=>page_size_unlimited.
+          LOOP AT lt_result INTO DATA(ls_page) FROM lv_offset + 1.
+            APPEND ls_page TO lt_page.
+
+            IF lv_page_size <> if_rap_query_paging=>page_size_unlimited
+               AND lines( lt_page ) >= lv_page_size.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+
+          lt_result = lt_page.
+        ENDIF.
+
+        io_response->set_data( lt_result ).
+
+      CATCH cx_root INTO DATA(lx_error).
+        IF io_request->is_data_requested( ).
+          io_response->set_data( lt_result ).
+        ENDIF.
+
+        IF io_request->is_total_numb_of_rec_requested( ).
+          io_response->set_total_number_of_records( 0 ).
+        ENDIF.
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD get_plants_by_company.
+    CHECK iv_company IS NOT INITIAL.
+
+    SELECT ValuationArea
+      FROM I_ValuationArea
+      WHERE CompanyCode = @iv_company
+      INTO TABLE @DATA(lt_bwkey).
+
+    CHECK lt_bwkey IS NOT INITIAL.
+
+    SELECT plant
+      FROM I_Plant
+      FOR ALL ENTRIES IN @lt_bwkey
+      WHERE ValuationArea = @lt_bwkey-ValuationArea
+      INTO TABLE @DATA(lt_werks).
+
+    rt_plants = VALUE #( FOR wa_plants IN lt_werks ( sign   = 'I'
+                                                     option = 'EQ'
+                                                     low    = wa_plants-Plant ) ).
+  ENDMETHOD.
+
+  METHOD get_volumes.
+    CHECK it_material IS NOT INITIAL AND it_plant_range IS NOT INITIAL.
+
+    SELECT SINGLE firstdayofweekdate
+      FROM I_CalendarDate
+      WHERE CalendarDate EQ @sy-datum
+      INTO @DATA(lv_week_start).
+
+    DATA(lv_week_end) = lv_week_start + 6.   " domingo, conforme EF
+
+    SELECT Product, Plant, ResvnItmRequiredQtyInBaseUnit, MatlCompRequirementDate
+      FROM I_ReservationDocumentItem
+      FOR ALL ENTRIES IN @it_material
+      WHERE Product = @it_material-material
+        AND Plant  IN @it_plant_range
+        AND ReservationItemIsFinallyIssued = @space
+        AND MatlCompRequirementDate >= @lv_week_start
+      INTO TABLE @DATA(lt_resb).
+
+    CHECK lt_resb IS NOT INITIAL.
+
+    LOOP AT lt_resb INTO DATA(ls_resb).
+      READ TABLE rt_volumes ASSIGNING FIELD-SYMBOL(<fs_vol>)
+        WITH KEY material = ls_resb-Product.
+      IF sy-subrc <> 0.
+        APPEND VALUE #( material = ls_resb-Product ) TO rt_volumes ASSIGNING <fs_vol>.
+      ENDIF.
+
+      " Total = todos os requerimentos a partir do início da semana corrente
+      <fs_vol>-totalvol = <fs_vol>-totalvol + ls_resb-ResvnItmRequiredQtyInBaseUnit.
+
+      IF ls_resb-MatlCompRequirementDate BETWEEN lv_week_start AND lv_week_end.
+        <fs_vol>-weeklyvol = <fs_vol>-weeklyvol + ls_resb-ResvnItmRequiredQtyInBaseUnit.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD build_bom_scope.
+    rt_boms = CORRESPONDING #( it_diferencias MAPPING ecnnumber = ChangeNumber
+                                                      objkt     = BomObjectId
+                                                      stlnr     = BillOfMaterial
+                                                      stlal     = BillOfMaterialVariant
+                                                      matnr     = Material
+                                                      werks     = Plant ).
+    CHECK rt_boms IS NOT INITIAL.
+
+    " Contador por objeto: vazio => data única do ECN; preenchido => data por objeto
+    SELECT aennr, objkt, aedtz
+      FROM aeoi
+      FOR ALL ENTRIES IN @rt_boms
+      WHERE aennr = @rt_boms-ecnnumber
+        AND objkt = @rt_boms-objkt
+      INTO TABLE @DATA(lt_aeoi).
+
+    SORT lt_aeoi BY aennr objkt.
+
+    SELECT aennr, datuv
+      FROM aenr
+      FOR ALL ENTRIES IN @rt_boms
+      WHERE aennr = @rt_boms-ecnnumber
+      INTO TABLE @DATA(lt_aenr).
+
+    SORT lt_aenr BY aennr.
+
+    SELECT aennr, aedtz, datuv
+      FROM aedt
+      FOR ALL ENTRIES IN @lt_aeoi
+      WHERE aennr = @lt_aeoi-aennr
+        AND aedtz = @lt_aeoi-aedtz
+      INTO TABLE @DATA(lt_aedt).
+
+    SORT lt_aedt BY aennr aedtz.
+
+    LOOP AT rt_boms ASSIGNING FIELD-SYMBOL(<fs_bom>).
+      READ TABLE lt_aeoi INTO DATA(ls_aeoi)
+        WITH KEY aennr = <fs_bom>-ecnnumber objkt = <fs_bom>-objkt BINARY SEARCH.
+
+      CHECK sy-subrc = 0.
+
+      IF ls_aeoi-aedtz IS INITIAL.
+        READ TABLE lt_aenr INTO DATA(ls_aenr)
+          WITH KEY aennr = <fs_bom>-ecnnumber BINARY SEARCH.
+
+        IF sy-subrc = 0.
+          <fs_bom>-datuv = ls_aenr-datuv.
+        ENDIF.
+      ELSE.
+        READ TABLE lt_aedt INTO DATA(ls_aedt)
+          WITH KEY aennr = <fs_bom>-ecnnumber aedtz = ls_aeoi-aedtz BINARY SEARCH.
+
+        IF sy-subrc = 0.
+          <fs_bom>-datuv = ls_aedt-datuv.
+        ENDIF.
+      ENDIF.
+    ENDLOOP.
+
+    DELETE rt_boms WHERE datuv IS INITIAL.
+  ENDMETHOD.
+
+  METHOD get_bom_items.
+*    CONSTANTS c_stlty TYPE stlty VALUE 'M'.
+
+    DATA: lt_bom_key  TYPE STANDARD TABLE OF ty_bom  WITH NON-UNIQUE SORTED KEY id COMPONENTS stlnr,
+          lt_pos      TYPE SORTED TABLE OF   ty_pos  WITH UNIQUE KEY stlnr posnr,
+          lt_debe_idx TYPE SORTED TABLE OF   ty_side WITH UNIQUE KEY stlnr posnr,
+          lt_dice_idx TYPE SORTED TABLE OF   ty_side WITH UNIQUE KEY stlnr posnr,
+          lt_stas     TYPE SORTED TABLE OF   ty_stas WITH NON-UNIQUE KEY stlnr stlal stlkn.
+
+    CHECK it_boms IS NOT INITIAL.
+
+    SELECT SINGLE Valor
+      FROM z_c_pp_parametros
+      WHERE IdNum    = '01'
+        AND Programa = 'ZCL_PP_QUERY_SUMARIZADO'
+        AND Campo    = 'STLTY'
+      INTO @DATA(lv_STLTY).
+
+    " Nós válidos por alternativa, quando o BOM tem alternativas (STAS)
+    SELECT stlnr, stlal, stlkn
+      FROM stas
+      FOR ALL ENTRIES IN @it_boms
+      WHERE stlty = @lv_STLTY
+        AND stlnr = @it_boms-stlnr
+        AND stlal = @it_boms-stlal
+        AND aennr = @it_boms-ecnnumber
+      INTO TABLE @lt_stas.
+
+    " Todas as versões de todas as posições dos BOMs em escopo, num único acesso.
+    " Sem filtro de LKENZ: a versão eliminada pelo ECN é a âncora do lado Dice.
+    SELECT stlnr, stlkn, stpoz, posnr, idnrk, menge, meins, datuv, aennr, lkenz
+      FROM stpo
+      FOR ALL ENTRIES IN @it_boms
+      WHERE stlty = @lv_STLTY
+        AND stlnr = @it_boms-stlnr
+      INTO TABLE @DATA(lt_stpo).
+
+    CHECK lt_stpo IS NOT INITIAL.
+
+    lt_bom_key = CORRESPONDING #( it_boms ).
+
+    " Dentro de cada posição, a versão mais recente vem primeiro
+    SORT lt_stpo BY stlnr posnr datuv DESCENDING stpoz DESCENDING.
+
+    " Passada única: classifica cada versão em posição alterada / lado Debe / lado Dice.
+    " O INSERT em tabela SORTED UNIQUE preserva apenas a primeira ocorrência,
+    " que é a versão mais recente de cada posição.
+    LOOP AT lt_stpo INTO DATA(ls_ver).
+      READ TABLE lt_bom_key INTO DATA(ls_bom_key)
+        WITH TABLE KEY id COMPONENTS stlnr = ls_ver-stlnr.
+      CHECK sy-subrc = 0.
+
+      IF ls_ver-aennr = ls_bom_key-ecnnumber.
+        IF line_exists( lt_stas[ stlnr = ls_bom_key-stlnr stlal = ls_bom_key-stlal ] )
+           AND NOT line_exists( lt_stas[ stlnr = ls_bom_key-stlnr
+                                         stlal = ls_bom_key-stlal
+                                         stlkn = ls_ver-stlkn ] ).
+          CONTINUE.
+        ENDIF.
+
+        " Posição tocada pelo ECN
+        INSERT VALUE ty_pos( stlnr = ls_ver-stlnr
+                             posnr = ls_ver-posnr ) INTO TABLE lt_pos.
+
+        " Debe: o que o ECN deixa vigente na posição
+        IF ls_ver-lkenz IS INITIAL.
+          INSERT CORRESPONDING ty_side( ls_ver ) INTO TABLE lt_debe_idx.
+        ENDIF.
+
+      ELSEIF ls_ver-lkenz IS INITIAL
+         AND ls_ver-datuv  < ls_bom_key-datuv.
+        " Dice: última versão vigente da posição antes da data do ECN.
+        " É a derivação de AENRA que a EF diz ser calculada em tempo de execução.
+        INSERT CORRESPONDING ty_side( ls_ver ) INTO TABLE lt_dice_idx.
+      ENDIF.
+    ENDLOOP.
+
+    LOOP AT lt_pos INTO DATA(ls_pos).
+      READ TABLE lt_bom_key INTO DATA(ls_bom_item)
+        WITH TABLE KEY id COMPONENTS stlnr = ls_pos-stlnr.
+      CHECK sy-subrc = 0.
+
+      APPEND INITIAL LINE TO rt_items ASSIGNING FIELD-SYMBOL(<fs_item>).
+      <fs_item>-ecnnumber = ls_bom_item-ecnnumber.
+      <fs_item>-material  = ls_bom_item-matnr.
+      <fs_item>-posbom    = ls_pos-posnr.
+
+      READ TABLE lt_debe_idx INTO DATA(ls_debe)
+        WITH TABLE KEY stlnr = ls_pos-stlnr posnr = ls_pos-posnr.
+      IF sy-subrc = 0.
+        <fs_item>-itemdebe = ls_debe-idnrk.
+        <fs_item>-qtydebe  = ls_debe-menge.
+        <fs_item>-unitdebe = ls_debe-meins.
+      ENDIF.
+
+      READ TABLE lt_dice_idx INTO DATA(ls_dice)
+        WITH TABLE KEY stlnr = ls_pos-stlnr posnr = ls_pos-posnr.
+      IF sy-subrc = 0.
+        <fs_item>-itemdice = ls_dice-idnrk.
+        <fs_item>-qtydice  = ls_dice-menge.
+        <fs_item>-unitdice = ls_dice-meins.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD get_parent_dice.
+    CONSTANTS c_stlty TYPE stlty VALUE 'M'.
+
+    DATA: lt_keys      TYPE SORTED TABLE OF ty_parent_key WITH UNIQUE KEY ecnnumber matnr,
+          lt_threshold TYPE SORTED TABLE OF ty_side       WITH UNIQUE KEY stlnr posnr,
+          lt_dice_idx  TYPE SORTED TABLE OF ty_side       WITH UNIQUE KEY stlnr posnr.
+
+    CHECK it_items IS NOT INITIAL.
+
+    " Materiais de cabeçalho distintos = Item Parent Debe
+    LOOP AT it_items INTO DATA(ls_item).
+      INSERT VALUE ty_parent_key( ecnnumber = ls_item-ecnnumber
+                                  matnr     = ls_item-material ) INTO TABLE lt_keys.
+    ENDLOOP.
+
+    " Onde esse material entra como componente na alteração do próprio ECN:
+    " dá o BOM avô e a posição em que a estrutura entra
+    SELECT stlnr, posnr, stpoz, idnrk, datuv, aennr
+      FROM stpo
+      FOR ALL ENTRIES IN @lt_keys
+      WHERE stlty = @c_stlty
+        AND idnrk = @lt_keys-matnr
+        AND aennr = @lt_keys-ecnnumber
+        AND lkenz = @space
+      INTO TABLE @DATA(lt_use).
+
+    CHECK lt_use IS NOT INITIAL.
+
+    LOOP AT lt_use INTO DATA(ls_use).
+      INSERT VALUE ty_side( stlnr = ls_use-stlnr
+                            posnr = ls_use-posnr ) INTO TABLE lt_threshold.
+    ENDLOOP.
+
+    SELECT stlnr, posnr, stpoz, idnrk, datuv, aennr, lkenz
+      FROM stpo
+      FOR ALL ENTRIES IN @lt_threshold
+      WHERE stlty = @c_stlty
+        AND stlnr = @lt_threshold-stlnr
+        AND posnr = @lt_threshold-posnr
+      INTO TABLE @DATA(lt_hist).
+
+    CHECK lt_hist IS NOT INITIAL.
+
+    SORT lt_hist BY stlnr posnr datuv DESCENDING stpoz DESCENDING.
+    SORT lt_use  BY stlnr posnr.
+
+    " Derivação de AENRA: primeira versão vigente anterior à do ECN
+    LOOP AT lt_hist INTO DATA(ls_hist).
+      READ TABLE lt_use INTO DATA(ls_ref)
+        WITH KEY stlnr = ls_hist-stlnr posnr = ls_hist-posnr BINARY SEARCH.
+      CHECK sy-subrc = 0.
+
+      CHECK ls_hist-lkenz IS INITIAL
+        AND ls_hist-aennr <> ls_ref-aennr
+        AND ls_hist-datuv  < ls_ref-datuv.
+
+      INSERT VALUE ty_side( stlnr = ls_hist-stlnr
+                            posnr = ls_hist-posnr
+                            idnrk = ls_hist-idnrk ) INTO TABLE lt_dice_idx.
+    ENDLOOP.
+
+    LOOP AT lt_use INTO DATA(ls_parent).
+      READ TABLE lt_dice_idx INTO DATA(ls_dice)
+        WITH TABLE KEY stlnr = ls_parent-stlnr posnr = ls_parent-posnr.
+      CHECK sy-subrc = 0.
+
+      INSERT VALUE ty_parent( ecnnumber = ls_parent-aennr
+                              matnr     = ls_parent-idnrk
+                              idnrk     = ls_dice-idnrk ) INTO TABLE rt_parents.
+    ENDLOOP.
+  ENDMETHOD.
+
+ENDCLASS.

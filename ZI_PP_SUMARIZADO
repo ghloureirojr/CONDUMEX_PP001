@@ -31,6 +31,12 @@ define root custom entity ZI_PP_SUMARIZADO
       @Consumption.valueHelpDefinition: [{ entity: { name: 'I_CompanyCode', element: 'CompanyCode' } }]
   key Company       : abap.char(4);  // Filter Sociedad
 
+      // Chave técnica para distinguir o mesmo material em listas diferentes.
+      // Não entra na lista do Sumarizado, conforme a EF.
+      @UI.hidden    : true
+      @EndUserText.label: 'Lista de materiales'
+  key BomNumber     : abap.char(8);
+
       // Mantidos como chave para identificar o registro de cada BOM,
       // mas não exibidos no Sumarizado (conforme EF)
       @UI.hidden    : true

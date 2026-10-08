@@ -147,6 +147,67 @@ ENDCLASS.
 
 
 CLASS zcl_pp_query_general IMPLEMENTATION.
+  METHOD if_rap_query_provider~select.
+    DATA: lt_result TYPE STANDARD TABLE OF zi_pp_general,
+          lt_page   TYPE STANDARD TABLE OF zi_pp_general.
+
+    TRY.
+        TRY.
+            DATA(lt_pairs) = io_request->get_filter( )->get_as_ranges( ).
+          CATCH cx_rap_query_filter_no_range.
+        ENDTRY.
+
+        rg_ecn          = get_filter( it_pairs = lt_pairs iv_name = 'ECNNUMBER' ).
+        rg_fechaECN     = get_filter( it_pairs = lt_pairs iv_name = 'FECHACREAECN' ).
+        rg_fechavalidez = get_filter( it_pairs = lt_pairs iv_name = 'ECNISSUEDATE' ).
+        rg_centro       = get_filter( it_pairs = lt_pairs iv_name = 'PLANT' ).
+        rg_plataform    = get_filter( it_pairs = lt_pairs iv_name = 'PLATFORM' ).
+        rg_statusECN    = get_filter( it_pairs = lt_pairs iv_name = 'ECNSTATUS' ).
+        rg_family       = get_filter( it_pairs = lt_pairs iv_name = 'FAMILY' ).
+        rg_event        = get_filter( it_pairs = lt_pairs iv_name = 'EVENT' ).
+        rg_doctp        = get_filter( it_pairs = lt_pairs iv_name = 'DOCUMENTTYPE' ).
+        rg_clnt         = get_filter( it_pairs = lt_pairs iv_name = 'CLIENTE' ).
+        rg_prtmat       = get_filter( it_pairs = lt_pairs iv_name = 'NUMPARTEMATERIAL' ).
+        rg_arnesprod    = get_filter( it_pairs = lt_pairs iv_name = 'ARNESPRODUCTOTERMINADO' ).
+        rg_bomnumber    = get_filter( it_pairs = lt_pairs iv_name = 'BOMNUMBER' ).
+        rg_itemnumber   = get_filter( it_pairs = lt_pairs iv_name = 'ITEMNUMBER' ).
+
+        lt_result = get_data( ).
+
+        IF io_request->is_total_numb_of_rec_requested( ).
+          io_response->set_total_number_of_records( CONV int8( lines( lt_result ) ) ).
+        ENDIF.
+
+        DATA(lo_paging)    = io_request->get_paging( ).
+        DATA(lv_offset)    = lo_paging->get_offset( ).
+        DATA(lv_page_size) = lo_paging->get_page_size( ).
+
+        IF lv_offset > 0 OR lv_page_size <> if_rap_query_paging=>page_size_unlimited.
+          LOOP AT lt_result INTO DATA(ls_page) FROM lv_offset + 1.
+            APPEND ls_page TO lt_page.
+
+            IF lv_page_size <> if_rap_query_paging=>page_size_unlimited
+               AND lines( lt_page ) >= lv_page_size.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+
+          lt_result = lt_page.
+        ENDIF.
+
+        io_response->set_data( lt_result ).
+
+      CATCH cx_root.
+        IF io_request->is_data_requested( ).
+          io_response->set_data( lt_result ).
+        ENDIF.
+
+        IF io_request->is_total_numb_of_rec_requested( ).
+          io_response->set_total_number_of_records( 0 ).
+        ENDIF.
+    ENDTRY.
+  ENDMETHOD.
+
   METHOD get_filter.
     IF line_exists( it_pairs[ name = iv_name ] ).
       rv_range = it_pairs[ name = iv_name ]-range.
@@ -396,585 +457,585 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
     ENDLOOP.
   ENDMETHOD.
 
-METHOD get_data.
-  DATA: lt_ecn_bom          TYPE SORTED TABLE OF zi_pp_get_ecn_bom_wrapper WITH NON-UNIQUE KEY EcnNumber,
-        lt_matrel           TYPE tt_matrel,
-        lt_scope            TYPE tt_scope,
-        lt_charc_ecn        TYPE SORTED TABLE OF ty_charc   WITH NON-UNIQUE KEY objctkey charcname,
-        lt_charc_arnes      TYPE SORTED TABLE OF ty_charc   WITH NON-UNIQUE KEY objctkey charcname,
-        lt_claficarnes      TYPE STANDARD TABLE OF ty_charc WITH NON-UNIQUE SORTED KEY id COMPONENTS objctkey,
-        lt_np_tier          TYPE STANDARD TABLE OF ty_charc,
-        lt_np_tier_read     TYPE SORTED TABLE OF ty_charc   WITH UNIQUE KEY objctkey charcname,
-        lt_ecnnum           TYPE SORTED TABLE OF zi_pp_get_ecn_bom_wrapper WITH NON-UNIQUE KEY EcnNumber,
-        lt_ecnclaftn        TYPE tt_classification,
-        lt_arnesnuevo       TYPE tt_classification,
-        lt_materialin       TYPE HASHED TABLE OF ty_material            WITH UNIQUE KEY material,
-        lt_materialout      TYPE HASHED TABLE OF ty_material            WITH UNIQUE KEY material,
-        lt_matininfo        TYPE HASHED TABLE OF zi_pp_material_wrapper WITH UNIQUE KEY Material,
-        lt_matoutinfo       TYPE HASHED TABLE OF zi_pp_material_wrapper WITH UNIQUE KEY Material,
-        lt_ppap             TYPE SORTED TABLE OF zi_pp_ppap_wrapper  WITH NON-UNIQUE KEY Material,
-        lt_matinplant       TYPE HASHED TABLE OF ty_matplant         WITH UNIQUE KEY material plant,
-        lt_matoutplant      TYPE HASHED TABLE OF ty_matplant         WITH UNIQUE KEY material plant,
-        lt_matincentro      TYPE HASHED TABLE OF I_ProductPlantBasic WITH UNIQUE KEY Product plant,
-        lt_matoutcentro     TYPE HASHED TABLE OF I_ProductPlantBasic WITH UNIQUE KEY Product plant,
-        lt_matstruoutdesc   TYPE HASHED TABLE OF i_productText       WITH UNIQUE KEY Product,
-        lt_StructureOutDesc TYPE HASHED TABLE OF i_productText       WITH UNIQUE KEY Product,
-        rg_ecnum            TYPE RANGE OF aennr,
-        lv_item             TYPE i,
-        lv_last_ecn         TYPE aennr,
-        lv_last_bom         TYPE stnum,
-        lv_leitura_chave    TYPE abap_bool.
+  METHOD get_data.
+    DATA: lt_ecn_bom          TYPE SORTED TABLE OF zi_pp_get_ecn_bom_wrapper WITH NON-UNIQUE KEY EcnNumber,
+          lt_matrel           TYPE tt_matrel,
+          lt_scope            TYPE tt_scope,
+          lt_charc_ecn        TYPE SORTED TABLE OF ty_charc   WITH NON-UNIQUE KEY objctkey charcname,
+          lt_charc_arnes      TYPE SORTED TABLE OF ty_charc   WITH NON-UNIQUE KEY objctkey charcname,
+          lt_claficarnes      TYPE STANDARD TABLE OF ty_charc WITH NON-UNIQUE SORTED KEY id COMPONENTS objctkey,
+          lt_np_tier          TYPE STANDARD TABLE OF ty_charc,
+          lt_np_tier_read     TYPE SORTED TABLE OF ty_charc   WITH UNIQUE KEY objctkey charcname,
+          lt_ecnnum           TYPE SORTED TABLE OF zi_pp_get_ecn_bom_wrapper WITH NON-UNIQUE KEY EcnNumber,
+          lt_ecnclaftn        TYPE tt_classification,
+          lt_arnesnuevo       TYPE tt_classification,
+          lt_materialin       TYPE HASHED TABLE OF ty_material            WITH UNIQUE KEY material,
+          lt_materialout      TYPE HASHED TABLE OF ty_material            WITH UNIQUE KEY material,
+          lt_matininfo        TYPE HASHED TABLE OF zi_pp_material_wrapper WITH UNIQUE KEY Material,
+          lt_matoutinfo       TYPE HASHED TABLE OF zi_pp_material_wrapper WITH UNIQUE KEY Material,
+          lt_ppap             TYPE SORTED TABLE OF zi_pp_ppap_wrapper  WITH NON-UNIQUE KEY Material,
+          lt_matinplant       TYPE HASHED TABLE OF ty_matplant         WITH UNIQUE KEY material plant,
+          lt_matoutplant      TYPE HASHED TABLE OF ty_matplant         WITH UNIQUE KEY material plant,
+          lt_matincentro      TYPE HASHED TABLE OF I_ProductPlantBasic WITH UNIQUE KEY Product plant,
+          lt_matoutcentro     TYPE HASHED TABLE OF I_ProductPlantBasic WITH UNIQUE KEY Product plant,
+          lt_matstruoutdesc   TYPE HASHED TABLE OF i_productText       WITH UNIQUE KEY Product,
+          lt_StructureOutDesc TYPE HASHED TABLE OF i_productText       WITH UNIQUE KEY Product,
+          rg_ecnum            TYPE RANGE OF aennr,
+          lv_item             TYPE i,
+          lv_last_ecn         TYPE aennr,
+          lv_last_bom         TYPE stnum,
+          lv_leitura_chave    TYPE abap_bool.
 
-  FIELD-SYMBOLS <fs_charc> TYPE ty_charc.
+    FIELD-SYMBOLS <fs_charc> TYPE ty_charc.
 
-  SELECT *
-    FROM zi_pp_get_ecn_bom_wrapper
-    WHERE EcnNumber    IN @rg_ecn
-      AND EcnIssueDate IN @rg_fechavalidez
-      AND FechaCreaECN IN @rg_fechaECN
-    INTO TABLE @lt_ecn_bom.
+    SELECT *
+      FROM zi_pp_get_ecn_bom_wrapper
+      WHERE EcnNumber    IN @rg_ecn
+        AND EcnIssueDate IN @rg_fechavalidez
+        AND FechaCreaECN IN @rg_fechaECN
+      INTO TABLE @lt_ecn_bom.
 
-  CHECK lt_ecn_bom IS NOT INITIAL.
+    CHECK lt_ecn_bom IS NOT INITIAL.
 
-  " --- Filtros por classificação da classe ECN (025) ---
-  lt_ecnclaftn = CORRESPONDING #( lt_ecn_bom MAPPING EcnNumber = EcnNumber
-                                                     objctkey  = EcnNumber ).
+    " --- Filtros por classificação da classe ECN (025) ---
+    lt_ecnclaftn = CORRESPONDING #( lt_ecn_bom MAPPING EcnNumber = EcnNumber
+                                                       objctkey  = EcnNumber ).
 
-  get_classification_filter( EXPORTING ir_filter    = rg_statusecn
-                                       iv_classtype = c_klart_e
-                                       iv_charcname = 'ECN_ESTATUS_ECN'
-                             CHANGING  ct_key       = lt_ecnclaftn ).
+    get_classification_filter( EXPORTING ir_filter    = rg_statusecn
+                                         iv_classtype = c_klart_e
+                                         iv_charcname = 'ECN_ESTATUS_ECN'
+                               CHANGING  ct_key       = lt_ecnclaftn ).
 
-  get_classification_filter( EXPORTING ir_filter    = rg_event
-                                       iv_classtype = c_klart_e
-                                       iv_charcname = 'ECN_EVENTO'
-                             CHANGING  ct_key       = lt_ecnclaftn ).
+    get_classification_filter( EXPORTING ir_filter    = rg_event
+                                         iv_classtype = c_klart_e
+                                         iv_charcname = 'ECN_EVENTO'
+                               CHANGING  ct_key       = lt_ecnclaftn ).
 
-  get_classification_filter( EXPORTING ir_filter    = rg_doctp
-                                       iv_classtype = c_klart_e
-                                       iv_charcname = 'ECN_TIPO_DOCUMENTO'
-                             CHANGING  ct_key       = lt_ecnclaftn ).
+    get_classification_filter( EXPORTING ir_filter    = rg_doctp
+                                         iv_classtype = c_klart_e
+                                         iv_charcname = 'ECN_TIPO_DOCUMENTO'
+                               CHANGING  ct_key       = lt_ecnclaftn ).
 
-  get_classification_filter( EXPORTING ir_filter    = rg_clnt
-                                       iv_classtype = c_klart_e
-                                       iv_charcname = 'ECN_CLIENTE'
-                             CHANGING  ct_key       = lt_ecnclaftn ).
+    get_classification_filter( EXPORTING ir_filter    = rg_clnt
+                                         iv_classtype = c_klart_e
+                                         iv_charcname = 'ECN_CLIENTE'
+                               CHANGING  ct_key       = lt_ecnclaftn ).
 
-  CHECK lt_ecnclaftn IS NOT INITIAL.
+    CHECK lt_ecnclaftn IS NOT INITIAL.
 
-  rg_ecnum = VALUE #( FOR wa_ecnclaftn IN lt_ecnclaftn ( sign   = 'I'
-                                                         option = 'EQ'
-                                                         low    = wa_ecnclaftn-ecnnumber ) ).
-
-  DELETE lt_ecn_bom USING KEY primary_key WHERE EcnNumber NOT IN rg_ecnum.
-
-  CLEAR rg_ecnum.
-
-  CHECK lt_ecn_bom IS NOT INITIAL.
-
-  lt_ecnnum = lt_ecn_bom.
-  DELETE ADJACENT DUPLICATES FROM lt_ecnnum.
-
-  " Leitura da object page: vem com BOM e posição. Não pode abortar por falta da tabla Z.
-  lv_leitura_chave = xsdbool( rg_bomnumber IS NOT INITIAL AND rg_itemnumber IS NOT INITIAL ).
-
-  " --- Tabla Z do ECN: Estructura Nueva, Arnés Nuevo e Arnés Anterior ---
-  SELECT *
-    FROM zi_pp_matrel_wrapper
-    FOR ALL ENTRIES IN @lt_ecnnum
-    WHERE EcnNumber              =  @lt_ecnnum-EcnNumber
-      AND PlantFiltro            IN @rg_centro
-      AND ArnesProductoTerminado IN @rg_arnesprod
-    INTO TABLE @lt_matrel.
-
-  IF lt_matrel IS NOT INITIAL.
-    lt_arnesnuevo = CORRESPONDING #( lt_matrel MAPPING EcnNumber = EcnNumber
-                                                       objctkey  = ArnesProductoTerminado ).
-
-    get_classification_filter( EXPORTING ir_filter    = rg_plataform
-                                         iv_classtype = c_klart_a
-                                         iv_charcname = 'ARNES_PLATAFORMA'
-                               CHANGING  ct_key       = lt_arnesnuevo ).
-
-    get_classification_filter( EXPORTING ir_filter    = rg_family
-                                         iv_classtype = c_klart_a
-                                         iv_charcname = 'ARNES_FAMILIA'
-                               CHANGING  ct_key       = lt_arnesnuevo ).
-
-    CHECK lt_arnesnuevo IS NOT INITIAL.
-
-    rg_ecnum = VALUE #( FOR wa_arnesnuevo IN lt_arnesnuevo ( sign   = 'I'
-                                                             option = 'EQ'
-                                                             low    = wa_arnesnuevo-ecnnumber ) ).
+    rg_ecnum = VALUE #( FOR wa_ecnclaftn IN lt_ecnclaftn ( sign   = 'I'
+                                                           option = 'EQ'
+                                                           low    = wa_ecnclaftn-ecnnumber ) ).
 
     DELETE lt_ecn_bom USING KEY primary_key WHERE EcnNumber NOT IN rg_ecnum.
 
     CLEAR rg_ecnum.
 
-  ELSEIF lv_leitura_chave = abap_false
-     AND ( rg_plataform IS NOT INITIAL OR rg_family    IS NOT INITIAL
-        OR rg_centro    IS NOT INITIAL OR rg_arnesprod IS NOT INITIAL ).
-    RETURN.
-  ENDIF.
+    CHECK lt_ecn_bom IS NOT INITIAL.
 
-  CHECK lt_ecn_bom IS NOT INITIAL.
+    lt_ecnnum = lt_ecn_bom.
+    DELETE ADJACENT DUPLICATES FROM lt_ecnnum.
 
-  " --- Escopo de objetos (BOMs) do ECN ---
-  lt_scope = CORRESPONDING #( lt_ecn_bom MAPPING ecnnumber       = EcnNumber
-                                                 plant           = Plant
-                                                 bomnumber       = BomNumber
-                                                 structurein     = StructureInMaterial
-                                                 structureindesc = StructureInDesc
-                                                 ecnissuedate    = EcnIssueDate ).
+    " Leitura da object page: vem com BOM e posição. Não pode abortar por falta da tabla Z.
+    lv_leitura_chave = xsdbool( rg_bomnumber IS NOT INITIAL AND rg_itemnumber IS NOT INITIAL ).
 
-  " Chaves da object page
-  IF rg_centro IS NOT INITIAL.
-    DELETE lt_scope WHERE plant NOT IN rg_centro.
-  ENDIF.
+    " --- Tabla Z do ECN: Estructura Nueva, Arnés Nuevo e Arnés Anterior ---
+    SELECT *
+      FROM zi_pp_matrel_wrapper
+      FOR ALL ENTRIES IN @lt_ecnnum
+      WHERE EcnNumber              =  @lt_ecnnum-EcnNumber
+        AND PlantFiltro            IN @rg_centro
+        AND ArnesProductoTerminado IN @rg_arnesprod
+      INTO TABLE @lt_matrel.
 
-  IF rg_bomnumber IS NOT INITIAL.
-    DELETE lt_scope WHERE bomnumber NOT IN rg_bomnumber.
-  ENDIF.
+    IF lt_matrel IS NOT INITIAL.
+      lt_arnesnuevo = CORRESPONDING #( lt_matrel MAPPING EcnNumber = EcnNumber
+                                                         objctkey  = ArnesProductoTerminado ).
 
-  CHECK lt_scope IS NOT INITIAL.
+      get_classification_filter( EXPORTING ir_filter    = rg_plataform
+                                           iv_classtype = c_klart_a
+                                           iv_charcname = 'ARNES_PLATAFORMA'
+                                 CHANGING  ct_key       = lt_arnesnuevo ).
 
-  " --- Posições do BOM, direto em STAS/STPO ---
-  DATA(lt_bompos) = get_bom_positions( lt_scope ).
+      get_classification_filter( EXPORTING ir_filter    = rg_family
+                                           iv_classtype = c_klart_a
+                                           iv_charcname = 'ARNES_FAMILIA'
+                                 CHANGING  ct_key       = lt_arnesnuevo ).
 
-  IF rg_itemnumber IS NOT INITIAL.
-    DELETE lt_bompos WHERE posnr NOT IN rg_itemnumber.
-  ENDIF.
+      CHECK lt_arnesnuevo IS NOT INITIAL.
 
-  CHECK lt_bompos IS NOT INITIAL.
+      rg_ecnum = VALUE #( FOR wa_arnesnuevo IN lt_arnesnuevo ( sign   = 'I'
+                                                               option = 'EQ'
+                                                               low    = wa_arnesnuevo-ecnnumber ) ).
 
-  " Parâmetro Número de Parte: mantém o BOM que tenha algum componente no range
-  IF rg_prtmat IS NOT INITIAL.
-    DATA lt_keep TYPE SORTED TABLE OF ty_node WITH UNIQUE KEY stlnr stlkn.
+      DELETE lt_ecn_bom USING KEY primary_key WHERE EcnNumber NOT IN rg_ecnum.
 
-    LOOP AT lt_bompos INTO DATA(ls_chk) WHERE materialin IN rg_prtmat.
-      INSERT VALUE ty_node( stlnr = ls_chk-stlnr ) INTO TABLE lt_keep.
-    ENDLOOP.
+      CLEAR rg_ecnum.
 
-    LOOP AT lt_bompos ASSIGNING FIELD-SYMBOL(<fs_del>).
-      IF NOT line_exists( lt_keep[ stlnr = <fs_del>-stlnr stlkn = space ] ).
-        CLEAR <fs_del>-ecnnumber.
-      ENDIF.
-    ENDLOOP.
+    ELSEIF lv_leitura_chave = abap_false
+       AND ( rg_plataform IS NOT INITIAL OR rg_family    IS NOT INITIAL
+          OR rg_centro    IS NOT INITIAL OR rg_arnesprod IS NOT INITIAL ).
+      RETURN.
+    ENDIF.
 
-    DELETE lt_bompos WHERE ecnnumber IS INITIAL.
+    CHECK lt_ecn_bom IS NOT INITIAL.
+
+    " --- Escopo de objetos (BOMs) do ECN ---
+    lt_scope = CORRESPONDING #( lt_ecn_bom MAPPING ecnnumber       = EcnNumber
+                                                   plant           = Plant
+                                                   bomnumber       = BomNumber
+                                                   structurein     = StructureInMaterial
+                                                   structureindesc = StructureInDesc
+                                                   ecnissuedate    = EcnIssueDate ).
+
+    " Chaves da object page
+    IF rg_centro IS NOT INITIAL.
+      DELETE lt_scope WHERE plant NOT IN rg_centro.
+    ENDIF.
+
+    IF rg_bomnumber IS NOT INITIAL.
+      DELETE lt_scope WHERE bomnumber NOT IN rg_bomnumber.
+    ENDIF.
+
+    CHECK lt_scope IS NOT INITIAL.
+
+    " --- Posições do BOM, direto em STAS/STPO ---
+    DATA(lt_bompos) = get_bom_positions( lt_scope ).
+
+    IF rg_itemnumber IS NOT INITIAL.
+      DELETE lt_bompos WHERE posnr NOT IN rg_itemnumber.
+    ENDIF.
 
     CHECK lt_bompos IS NOT INITIAL.
-  ENDIF.
 
-  DATA(lt_structout) = get_structure_out( it_scope  = lt_scope
-                                          it_matrel = lt_matrel ).
+    " Parâmetro Número de Parte: mantém o BOM que tenha algum componente no range
+    IF rg_prtmat IS NOT INITIAL.
+      DATA lt_keep TYPE SORTED TABLE OF ty_node WITH UNIQUE KEY stlnr stlkn.
 
-  " --- Classificação classe ECN, para o conjunto final ---
-  DELETE ADJACENT DUPLICATES FROM lt_ecnclaftn USING KEY id2.
-  DELETE lt_ecnclaftn USING KEY id2 WHERE objctkey IS INITIAL.
+      LOOP AT lt_bompos INTO DATA(ls_chk) WHERE materialin IN rg_prtmat.
+        INSERT VALUE ty_node( stlnr = ls_chk-stlnr ) INTO TABLE lt_keep.
+      ENDLOOP.
 
-  IF lt_ecnclaftn IS NOT INITIAL.
-    SELECT objectkey, charcname, charcformat, charcvaluetext, charcvaluefrom
-      FROM zi_pp_classification
-      FOR ALL ENTRIES IN @lt_ecnclaftn
-      WHERE ObjectKey = @lt_ecnclaftn-objctkey
-        AND classtype = @c_klart_e
-        AND charcname IN ( 'ECN_ESTATUS_ECN', 'ECN_EVENTO', 'ECN_TIPO_DOCUMENTO',
-                           'ECN_PRIORIDAD', 'ECN_CR', 'ECN_FOLIO_DOCUMENTO',
-                           'ECN_DOCUMENTO_CLIENTE', 'ECN_RETIRO_VENCE', 'ECN_FECHA_VENCE',
-                           'ECN_FECHA_ALTA', 'ECN_REVISO_PERMISO_FECHA', 'ECN_REVISO_PERMISO_NOMBRE',
-                           'ECN_REFERENCIA_ECN_CANCEL', 'ECN_NUMERO_INICIATIVA' )
-      INTO TABLE @lt_charc_ecn.
-  ENDIF.
+      LOOP AT lt_bompos ASSIGNING FIELD-SYMBOL(<fs_del>).
+        IF NOT line_exists( lt_keep[ stlnr = <fs_del>-stlnr stlkn = space ] ).
+          CLEAR <fs_del>-ecnnumber.
+        ENDIF.
+      ENDLOOP.
 
-  " --- Classificação classe ARNES ---
-  DELETE ADJACENT DUPLICATES FROM lt_arnesnuevo USING KEY id2.
+      DELETE lt_bompos WHERE ecnnumber IS INITIAL.
 
-  lt_claficarnes = VALUE #( FOR wa_arnes IN lt_arnesnuevo ( objctkey = wa_arnes-objctkey ) ).
-  lt_claficarnes = VALUE #( BASE lt_claficarnes FOR wa_matrel IN lt_matrel ( objctkey = wa_matrel-PreviousMaterial ) ).
-  lt_claficarnes = VALUE #( BASE lt_claficarnes FOR wa_scope IN lt_scope ( objctkey = wa_scope-structurein ) ).
-  lt_claficarnes = VALUE #( BASE lt_claficarnes FOR wa_str IN lt_structout ( objctkey = wa_str-structureout ) ).
-
-  DELETE ADJACENT DUPLICATES FROM lt_claficarnes USING KEY id.
-  DELETE lt_claficarnes USING KEY id WHERE objctkey IS INITIAL.
-
-  IF lt_claficarnes IS NOT INITIAL.
-    SELECT objectkey, charcname, charcformat, charcvaluetext, charcvaluefrom
-      FROM zi_pp_classification
-      FOR ALL ENTRIES IN @lt_claficarnes
-      WHERE ObjectKey = @lt_claficarnes-objctkey
-        AND classtype = @c_klart_a
-        AND charcname IN ( 'ARNES_PLATAFORMA', 'ARNES_FAMILIA', 'ARNES_A_MODELO', 'NIVEL_INGENIERIA',
-                           'ARNES_NP_TIER', 'ARNES_NP_APTIV', 'ARNES_NP_OEM', 'PLANO_CARTA' )
-      INTO TABLE @lt_charc_arnes.
-  ENDIF.
-
-  lt_np_tier = VALUE #( FOR wa_charc IN lt_charc_arnes
-                        WHERE ( charcname = 'ARNES_NP_TIER' AND charcvaluetext IS NOT INITIAL )
-                        ( objctkey = wa_charc-charcvaluetext charcname = wa_charc-charcname ) ).
-
-  SORT lt_np_tier BY objctkey.
-  DELETE ADJACENT DUPLICATES FROM lt_np_tier COMPARING objctkey.
-
-  IF lt_np_tier IS NOT INITIAL.
-    SELECT objectkey, charcname, charcformat, charcvaluetext, charcvaluefrom
-      FROM zi_pp_classification
-      FOR ALL ENTRIES IN @lt_np_tier
-      WHERE ObjectKey = @lt_np_tier-objctkey
-        AND classtype = @c_klart_a
-        AND charcname = 'NIVEL_INGENIERIA'
-      INTO TABLE @lt_np_tier_read.
-  ENDIF.
-
-  " --- Mestre de materiais dos dois lados ---
-  lt_materialin  = CORRESPONDING #( lt_bompos DISCARDING DUPLICATES MAPPING material = materialin ).
-  lt_materialout = CORRESPONDING #( lt_bompos DISCARDING DUPLICATES MAPPING material = materialout ).
-
-  DELETE lt_materialout WHERE material IS INITIAL.
-
-  IF lt_materialin IS NOT INITIAL.
-    SELECT *
-      FROM zi_pp_material_wrapper
-      FOR ALL ENTRIES IN @lt_materialin
-      WHERE Material = @lt_materialin-material
-      INTO TABLE @lt_matininfo.
-
-    SELECT *
-      FROM zi_pp_ppap_wrapper
-      FOR ALL ENTRIES IN @lt_materialin
-      WHERE Material = @lt_materialin-material
-      INTO TABLE @lt_ppap.
-  ENDIF.
-
-  IF lt_materialout IS NOT INITIAL.
-    SELECT *
-      FROM zi_pp_material_wrapper
-      FOR ALL ENTRIES IN @lt_materialout
-      WHERE Material = @lt_materialout-material
-      INTO TABLE @lt_matoutinfo.
-  ENDIF.
-
-  " --- Grupo de compras por centro ---
-  LOOP AT lt_bompos INTO DATA(ls_bp).
-    READ TABLE lt_scope INTO DATA(ls_sc)
-      WITH TABLE KEY id COMPONENTS ecnnumber = ls_bp-ecnnumber bomnumber = ls_bp-stlnr.
-    CHECK sy-subrc = 0.
-
-    INSERT VALUE ty_matplant( material = ls_bp-materialin
-                              plant    = ls_sc-plant ) INTO TABLE lt_matinplant.
-
-    IF ls_bp-materialout IS NOT INITIAL.
-      INSERT VALUE ty_matplant( material = ls_bp-materialout
-                                plant    = ls_sc-plant ) INTO TABLE lt_matoutplant.
-    ENDIF.
-  ENDLOOP.
-
-  IF lt_matinplant IS NOT INITIAL.
-    SELECT *
-      FROM I_ProductPlantBasic
-      FOR ALL ENTRIES IN @lt_matinplant
-      WHERE product = @lt_matinplant-material
-        AND plant   = @lt_matinplant-plant
-      INTO TABLE @lt_matincentro.
-  ENDIF.
-
-  IF lt_matoutplant IS NOT INITIAL.
-    SELECT *
-      FROM I_ProductPlantBasic
-      FOR ALL ENTRIES IN @lt_matoutplant
-      WHERE product = @lt_matoutplant-material
-        AND plant   = @lt_matoutplant-plant
-      INTO TABLE @lt_matoutcentro.
-  ENDIF.
-
-  " --- Descrição da Estructura Sale ---
-  lt_matstruoutdesc = CORRESPONDING #( lt_structout DISCARDING DUPLICATES MAPPING product = structureout ).
-
-  DELETE lt_matstruoutdesc WHERE Product IS INITIAL.
-
-  IF lt_matstruoutdesc IS NOT INITIAL.
-    SELECT *
-      FROM I_Producttext
-      FOR ALL ENTRIES IN @lt_matstruoutdesc
-      WHERE product  = @lt_matstruoutdesc-product
-        AND Language = @sy-langu
-      INTO TABLE @lt_StructureOutDesc.
-  ENDIF.
-
-  " --- Montagem do resultado ---
-  LOOP AT lt_bompos INTO DATA(ls_pos).
-    READ TABLE lt_scope INTO DATA(ls_scope)
-      WITH TABLE KEY id COMPONENTS ecnnumber = ls_pos-ecnnumber bomnumber = ls_pos-stlnr.
-    CHECK sy-subrc = 0.
-
-    APPEND INITIAL LINE TO rt_result ASSIGNING FIELD-SYMBOL(<fs_result>).
-
-    <fs_result> = VALUE #( EcnNumber           = ls_scope-ecnnumber
-                           Plant               = ls_scope-plant
-                           BomNumber           = ls_scope-bomnumber
-                           ItemNumber          = ls_pos-posnr
-                           StructureInMaterial = ls_scope-structurein
-                           StructureInDesc     = ls_scope-structureindesc
-                           EcnIssueDate        = ls_scope-ecnissuedate
-                           EffectivityDate     = ls_pos-datuv
-                           MaterialIn          = ls_pos-materialin
-                           QuantityIn          = ls_pos-qtyin
-                           UnitIn              = ls_pos-unitin
-                           MaterialOut         = ls_pos-materialout
-                           QuantityOut         = ls_pos-qtyout
-                           UnitOut             = ls_pos-unitout ).
-
-    READ TABLE lt_structout INTO DATA(ls_structout)
-      WITH TABLE KEY ecnnumber   = ls_scope-ecnnumber
-                     structurein = ls_scope-structurein.
-    IF sy-subrc = 0.
-      <fs_result>-StructureOutMaterial = ls_structout-structureout.
+      CHECK lt_bompos IS NOT INITIAL.
     ENDIF.
 
-    IF <fs_result>-EcnNumber <> lv_last_ecn OR <fs_result>-BomNumber <> lv_last_bom.
-      lv_item     += 1.
-      lv_last_ecn = <fs_result>-EcnNumber.
-      lv_last_bom = <fs_result>-BomNumber.
+    DATA(lt_structout) = get_structure_out( it_scope  = lt_scope
+                                            it_matrel = lt_matrel ).
+
+    " --- Classificação classe ECN, para o conjunto final ---
+    DELETE ADJACENT DUPLICATES FROM lt_ecnclaftn USING KEY id2.
+    DELETE lt_ecnclaftn USING KEY id2 WHERE objctkey IS INITIAL.
+
+    IF lt_ecnclaftn IS NOT INITIAL.
+      SELECT objectkey, charcname, charcformat, charcvaluetext, charcvaluefrom
+        FROM zi_pp_classification
+        FOR ALL ENTRIES IN @lt_ecnclaftn
+        WHERE ObjectKey = @lt_ecnclaftn-objctkey
+          AND classtype = @c_klart_e
+          AND charcname IN ( 'ECN_ESTATUS_ECN', 'ECN_EVENTO', 'ECN_TIPO_DOCUMENTO',
+                             'ECN_PRIORIDAD', 'ECN_CR', 'ECN_FOLIO_DOCUMENTO',
+                             'ECN_DOCUMENTO_CLIENTE', 'ECN_RETIRO_VENCE', 'ECN_FECHA_VENCE',
+                             'ECN_FECHA_ALTA', 'ECN_REVISO_PERMISO_FECHA', 'ECN_REVISO_PERMISO_NOMBRE',
+                             'ECN_REFERENCIA_ECN_CANCEL', 'ECN_NUMERO_INICIATIVA' )
+        INTO TABLE @lt_charc_ecn.
     ENDIF.
 
-    <fs_result>-StructureItemNumber = lv_item.
+    " --- Classificação classe ARNES ---
+    DELETE ADJACENT DUPLICATES FROM lt_arnesnuevo USING KEY id2.
 
-    "-----------------------------Clasificación ECN (025)------------------------------
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_ESTATUS_ECN'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-EcnStatus = <fs_charc>-charcvaluetext.
+    lt_claficarnes = VALUE #( FOR wa_arnes IN lt_arnesnuevo ( objctkey = wa_arnes-objctkey ) ).
+    lt_claficarnes = VALUE #( BASE lt_claficarnes FOR wa_matrel IN lt_matrel ( objctkey = wa_matrel-PreviousMaterial ) ).
+    lt_claficarnes = VALUE #( BASE lt_claficarnes FOR wa_scope IN lt_scope ( objctkey = wa_scope-structurein ) ).
+    lt_claficarnes = VALUE #( BASE lt_claficarnes FOR wa_str IN lt_structout ( objctkey = wa_str-structureout ) ).
+
+    DELETE ADJACENT DUPLICATES FROM lt_claficarnes USING KEY id.
+    DELETE lt_claficarnes USING KEY id WHERE objctkey IS INITIAL.
+
+    IF lt_claficarnes IS NOT INITIAL.
+      SELECT objectkey, charcname, charcformat, charcvaluetext, charcvaluefrom
+        FROM zi_pp_classification
+        FOR ALL ENTRIES IN @lt_claficarnes
+        WHERE ObjectKey = @lt_claficarnes-objctkey
+          AND classtype = @c_klart_a
+          AND charcname IN ( 'ARNES_PLATAFORMA', 'ARNES_FAMILIA', 'ARNES_A_MODELO', 'NIVEL_INGENIERIA',
+                             'ARNES_NP_TIER', 'ARNES_NP_APTIV', 'ARNES_NP_OEM', 'PLANO_CARTA' )
+        INTO TABLE @lt_charc_arnes.
     ENDIF.
 
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_EVENTO'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-Event = <fs_charc>-charcvaluetext.
+    lt_np_tier = VALUE #( FOR wa_charc IN lt_charc_arnes
+                          WHERE ( charcname = 'ARNES_NP_TIER' AND charcvaluetext IS NOT INITIAL )
+                          ( objctkey = wa_charc-charcvaluetext charcname = wa_charc-charcname ) ).
+
+    SORT lt_np_tier BY objctkey.
+    DELETE ADJACENT DUPLICATES FROM lt_np_tier COMPARING objctkey.
+
+    IF lt_np_tier IS NOT INITIAL.
+      SELECT objectkey, charcname, charcformat, charcvaluetext, charcvaluefrom
+        FROM zi_pp_classification
+        FOR ALL ENTRIES IN @lt_np_tier
+        WHERE ObjectKey = @lt_np_tier-objctkey
+          AND classtype = @c_klart_a
+          AND charcname = 'NIVEL_INGENIERIA'
+        INTO TABLE @lt_np_tier_read.
     ENDIF.
 
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_TIPO_DOCUMENTO'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-DocumentType = <fs_charc>-charcvaluetext.
+    " --- Mestre de materiais dos dois lados ---
+    lt_materialin  = CORRESPONDING #( lt_bompos DISCARDING DUPLICATES MAPPING material = materialin ).
+    lt_materialout = CORRESPONDING #( lt_bompos DISCARDING DUPLICATES MAPPING material = materialout ).
+
+    DELETE lt_materialout WHERE material IS INITIAL.
+
+    IF lt_materialin IS NOT INITIAL.
+      SELECT *
+        FROM zi_pp_material_wrapper
+        FOR ALL ENTRIES IN @lt_materialin
+        WHERE Material = @lt_materialin-material
+        INTO TABLE @lt_matininfo.
+
+      SELECT *
+        FROM zi_pp_ppap_wrapper
+        FOR ALL ENTRIES IN @lt_materialin
+        WHERE Material = @lt_materialin-material
+        INTO TABLE @lt_ppap.
     ENDIF.
 
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_PRIORIDAD'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-Priority = <fs_charc>-charcvaluetext.
+    IF lt_materialout IS NOT INITIAL.
+      SELECT *
+        FROM zi_pp_material_wrapper
+        FOR ALL ENTRIES IN @lt_materialout
+        WHERE Material = @lt_materialout-material
+        INTO TABLE @lt_matoutinfo.
     ENDIF.
 
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_CR'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-CrNumber = <fs_charc>-charcvaluetext.
+    " --- Grupo de compras por centro ---
+    LOOP AT lt_bompos INTO DATA(ls_bp).
+      READ TABLE lt_scope INTO DATA(ls_sc)
+        WITH TABLE KEY id COMPONENTS ecnnumber = ls_bp-ecnnumber bomnumber = ls_bp-stlnr.
+      CHECK sy-subrc = 0.
+
+      INSERT VALUE ty_matplant( material = ls_bp-materialin
+                                plant    = ls_sc-plant ) INTO TABLE lt_matinplant.
+
+      IF ls_bp-materialout IS NOT INITIAL.
+        INSERT VALUE ty_matplant( material = ls_bp-materialout
+                                  plant    = ls_sc-plant ) INTO TABLE lt_matoutplant.
+      ENDIF.
+    ENDLOOP.
+
+    IF lt_matinplant IS NOT INITIAL.
+      SELECT *
+        FROM I_ProductPlantBasic
+        FOR ALL ENTRIES IN @lt_matinplant
+        WHERE product = @lt_matinplant-material
+          AND plant   = @lt_matinplant-plant
+        INTO TABLE @lt_matincentro.
     ENDIF.
 
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_FOLIO_DOCUMENTO'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-DocumentFolio = <fs_charc>-charcvaluetext.
+    IF lt_matoutplant IS NOT INITIAL.
+      SELECT *
+        FROM I_ProductPlantBasic
+        FOR ALL ENTRIES IN @lt_matoutplant
+        WHERE product = @lt_matoutplant-material
+          AND plant   = @lt_matoutplant-plant
+        INTO TABLE @lt_matoutcentro.
     ENDIF.
 
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_DOCUMENTO_CLIENTE'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-CustDocument = <fs_charc>-charcvaluetext.
+    " --- Descrição da Estructura Sale ---
+    lt_matstruoutdesc = CORRESPONDING #( lt_structout DISCARDING DUPLICATES MAPPING product = structureout ).
+
+    DELETE lt_matstruoutdesc WHERE Product IS INITIAL.
+
+    IF lt_matstruoutdesc IS NOT INITIAL.
+      SELECT *
+        FROM I_Producttext
+        FOR ALL ENTRIES IN @lt_matstruoutdesc
+        WHERE product  = @lt_matstruoutdesc-product
+          AND Language = @sy-langu
+        INTO TABLE @lt_StructureOutDesc.
     ENDIF.
 
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_RETIRO_VENCE'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-RetiroVenc = <fs_charc>-charcvaluetext.
-    ENDIF.
+    " --- Montagem do resultado ---
+    LOOP AT lt_bompos INTO DATA(ls_pos).
+      READ TABLE lt_scope INTO DATA(ls_scope)
+        WITH TABLE KEY id COMPONENTS ecnnumber = ls_pos-ecnnumber bomnumber = ls_pos-stlnr.
+      CHECK sy-subrc = 0.
 
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_FECHA_VENCE'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-FechaVenc = charc_to_date( <fs_charc> ).
-    ENDIF.
+      APPEND INITIAL LINE TO rt_result ASSIGNING FIELD-SYMBOL(<fs_result>).
 
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_FECHA_ALTA'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-FechaAlta = charc_to_date( <fs_charc> ).
-    ENDIF.
+      <fs_result> = VALUE #( EcnNumber           = ls_scope-ecnnumber
+                             Plant               = ls_scope-plant
+                             BomNumber           = ls_scope-bomnumber
+                             ItemNumber          = ls_pos-posnr
+                             StructureInMaterial = ls_scope-structurein
+                             StructureInDesc     = ls_scope-structureindesc
+                             EcnIssueDate        = ls_scope-ecnissuedate
+                             EffectivityDate     = ls_pos-datuv
+                             MaterialIn          = ls_pos-materialin
+                             QuantityIn          = ls_pos-qtyin
+                             UnitIn              = ls_pos-unitin
+                             MaterialOut         = ls_pos-materialout
+                             QuantityOut         = ls_pos-qtyout
+                             UnitOut             = ls_pos-unitout ).
 
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_REVISO_PERMISO_FECHA'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-FechaRevisado = charc_to_date( <fs_charc> ).
-    ENDIF.
-
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_REVISO_PERMISO_NOMBRE'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-NombreReviso = <fs_charc>-charcvaluetext.
-    ENDIF.
-
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_REFERENCIA_ECN_CANCEL'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-RefCancECN = <fs_charc>-charcvaluetext.
-    ENDIF.
-
-    READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_NUMERO_INICIATIVA'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-NumIniciativa = <fs_charc>-charcvaluetext.
-    ENDIF.
-
-    "-----------------------------Tabla Z / Clasificación ARNES (001)-------------------
-    " EF campos 18 e 20: Tabla Z filtrada por ECN (coluna 1) e Estructura Nueva (coluna 2)
-    READ TABLE lt_matrel INTO DATA(ls_matrel)
-      WITH TABLE KEY EcnNumber         = ls_scope-ecnnumber
-                     NewStructMaterial = ls_scope-structurein.
-
-    IF sy-subrc = 0.
-      <fs_result>-NumParteClienteActual = ls_matrel-PreviousMaterial.
-      <fs_result>-NumParteClienteNuevo  = ls_matrel-ArnesProductoTerminado.
-
-      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-        WITH TABLE KEY objctkey = ls_matrel-PreviousMaterial charcname = 'NIVEL_INGENIERIA'.
-      IF sy-subrc IS INITIAL.
-        <fs_result>-NivIngActual = <fs_charc>-charcvaluetext.
+      READ TABLE lt_structout INTO DATA(ls_structout)
+        WITH TABLE KEY ecnnumber   = ls_scope-ecnnumber
+                       structurein = ls_scope-structurein.
+      IF sy-subrc = 0.
+        <fs_result>-StructureOutMaterial = ls_structout-structureout.
       ENDIF.
 
-      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-        WITH TABLE KEY objctkey = ls_matrel-ArnesProductoTerminado charcname = 'NIVEL_INGENIERIA'.
-      IF sy-subrc IS INITIAL.
-        <fs_result>-NivIngNuevo = <fs_charc>-charcvaluetext.
+      IF <fs_result>-EcnNumber <> lv_last_ecn OR <fs_result>-BomNumber <> lv_last_bom.
+        lv_item     += 1.
+        lv_last_ecn = <fs_result>-EcnNumber.
+        lv_last_bom = <fs_result>-BomNumber.
       ENDIF.
 
-      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-        WITH TABLE KEY objctkey = ls_matrel-PreviousMaterial charcname = 'ARNES_NP_TIER'.
-      IF sy-subrc IS INITIAL.
-        <fs_result>-NumParteTierActual = <fs_charc>-charcvaluetext.
+      <fs_result>-StructureItemNumber = lv_item.
 
-        READ TABLE lt_np_tier_read ASSIGNING <fs_charc>
-          WITH TABLE KEY objctkey = <fs_result>-NumParteTierActual charcname = 'NIVEL_INGENIERIA'.
+      "-----------------------------Clasificación ECN (025)------------------------------
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_ESTATUS_ECN'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-EcnStatus = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_EVENTO'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-Event = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_TIPO_DOCUMENTO'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-DocumentType = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_PRIORIDAD'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-Priority = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_CR'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-CrNumber = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_FOLIO_DOCUMENTO'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-DocumentFolio = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_DOCUMENTO_CLIENTE'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-CustDocument = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_RETIRO_VENCE'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-RetiroVenc = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_FECHA_VENCE'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-FechaVenc = charc_to_date( <fs_charc> ).
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_FECHA_ALTA'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-FechaAlta = charc_to_date( <fs_charc> ).
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_REVISO_PERMISO_FECHA'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-FechaRevisado = charc_to_date( <fs_charc> ).
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_REVISO_PERMISO_NOMBRE'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-NombreReviso = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_REFERENCIA_ECN_CANCEL'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-RefCancECN = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_ecn ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-EcnNumber charcname = 'ECN_NUMERO_INICIATIVA'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-NumIniciativa = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      "-----------------------------Tabla Z / Clasificación ARNES (001)-------------------
+      " EF campos 18 e 20: Tabla Z filtrada por ECN (coluna 1) e Estructura Nueva (coluna 2)
+      READ TABLE lt_matrel INTO DATA(ls_matrel)
+        WITH TABLE KEY EcnNumber         = ls_scope-ecnnumber
+                       NewStructMaterial = ls_scope-structurein.
+
+      IF sy-subrc = 0.
+        <fs_result>-NumParteClienteActual = ls_matrel-PreviousMaterial.
+        <fs_result>-NumParteClienteNuevo  = ls_matrel-ArnesProductoTerminado.
+
+        READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+          WITH TABLE KEY objctkey = ls_matrel-PreviousMaterial charcname = 'NIVEL_INGENIERIA'.
         IF sy-subrc IS INITIAL.
-          <fs_result>-NivIngTierActual = <fs_charc>-charcvaluetext.
+          <fs_result>-NivIngActual = <fs_charc>-charcvaluetext.
+        ENDIF.
+
+        READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+          WITH TABLE KEY objctkey = ls_matrel-ArnesProductoTerminado charcname = 'NIVEL_INGENIERIA'.
+        IF sy-subrc IS INITIAL.
+          <fs_result>-NivIngNuevo = <fs_charc>-charcvaluetext.
+        ENDIF.
+
+        READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+          WITH TABLE KEY objctkey = ls_matrel-PreviousMaterial charcname = 'ARNES_NP_TIER'.
+        IF sy-subrc IS INITIAL.
+          <fs_result>-NumParteTierActual = <fs_charc>-charcvaluetext.
+
+          READ TABLE lt_np_tier_read ASSIGNING <fs_charc>
+            WITH TABLE KEY objctkey = <fs_result>-NumParteTierActual charcname = 'NIVEL_INGENIERIA'.
+          IF sy-subrc IS INITIAL.
+            <fs_result>-NivIngTierActual = <fs_charc>-charcvaluetext.
+          ENDIF.
+        ENDIF.
+
+        READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+          WITH TABLE KEY objctkey = ls_matrel-ArnesProductoTerminado charcname = 'ARNES_NP_TIER'.
+        IF sy-subrc IS INITIAL.
+          <fs_result>-NumParteTierNuevo = <fs_charc>-charcvaluetext.
+
+          READ TABLE lt_np_tier_read ASSIGNING <fs_charc>
+            WITH TABLE KEY objctkey = <fs_result>-NumParteTierNuevo charcname = 'NIVEL_INGENIERIA'.
+          IF sy-subrc IS INITIAL.
+            <fs_result>-NivIngeTierNuevo = <fs_charc>-charcvaluetext.
+          ENDIF.
+        ENDIF.
+
+        READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+          WITH TABLE KEY objctkey = ls_matrel-PreviousMaterial charcname = 'ARNES_NP_APTIV'.
+        IF sy-subrc IS INITIAL.
+          <fs_result>-NumParteAptivActual = <fs_charc>-charcvaluetext.
+        ENDIF.
+
+        READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+          WITH TABLE KEY objctkey = ls_matrel-ArnesProductoTerminado charcname = 'ARNES_NP_APTIV'.
+        IF sy-subrc IS INITIAL.
+          <fs_result>-NumParteAptivNuevo = <fs_charc>-charcvaluetext.
+        ENDIF.
+
+        READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+          WITH TABLE KEY objctkey = ls_matrel-PreviousMaterial charcname = 'ARNES_NP_OEM'.
+        IF sy-subrc IS INITIAL.
+          <fs_result>-NumParteOEMActual = <fs_charc>-charcvaluetext.
+        ENDIF.
+
+        READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+          WITH TABLE KEY objctkey = ls_matrel-ArnesProductoTerminado charcname = 'ARNES_NP_OEM'.
+        IF sy-subrc IS INITIAL.
+          <fs_result>-NumParteOEMNuevo = <fs_charc>-charcvaluetext.
         ENDIF.
       ENDIF.
 
+      " Plataforma, Familia, Año Modelo e Plano Carta Actual vêm da Estructura Sale (12)
       READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-        WITH TABLE KEY objctkey = ls_matrel-ArnesProductoTerminado charcname = 'ARNES_NP_TIER'.
+        WITH TABLE KEY objctkey = <fs_result>-StructureOutMaterial charcname = 'ARNES_PLATAFORMA'.
       IF sy-subrc IS INITIAL.
-        <fs_result>-NumParteTierNuevo = <fs_charc>-charcvaluetext.
+        <fs_result>-Platform = <fs_charc>-charcvaluetext.
+      ENDIF.
 
-        READ TABLE lt_np_tier_read ASSIGNING <fs_charc>
-          WITH TABLE KEY objctkey = <fs_result>-NumParteTierNuevo charcname = 'NIVEL_INGENIERIA'.
+      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-StructureOutMaterial charcname = 'ARNES_FAMILIA'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-Family = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-StructureOutMaterial charcname = 'ARNES_A_MODELO'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-ModelYear = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-StructureOutMaterial charcname = 'PLANO_CARTA'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-StructureOutDrawing = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      " Plano Carta da Estructura Entra (17)
+      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
+        WITH TABLE KEY objctkey = <fs_result>-StructureInMaterial charcname = 'PLANO_CARTA'.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-StructureInDrawing = <fs_charc>-charcvaluetext.
+      ENDIF.
+
+      READ TABLE lt_StructureOutDesc ASSIGNING FIELD-SYMBOL(<fs_structout>)
+        WITH TABLE KEY product = <fs_result>-StructureOutMaterial.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-StructureOutDesc = <fs_structout>-ProductName.
+      ENDIF.
+
+      "-----------------------------Material Entra---------------------------------------
+      READ TABLE lt_matininfo ASSIGNING FIELD-SYMBOL(<fs_matininfo>)
+        WITH TABLE KEY Material = ls_pos-materialin.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-MaterialInType      = <fs_matininfo>-MaterialType.
+        <fs_result>-MaterialGroupIn     = <fs_matininfo>-MaterialGroup.
+        <fs_result>-MaterialGroupInDesc = <fs_matininfo>-MaterialGroupDesc.
+        <fs_result>-MaterialInDesc      = <fs_matininfo>-MaterialDesc.
+      ENDIF.
+
+      READ TABLE lt_matincentro ASSIGNING FIELD-SYMBOL(<fs_matincentro>)
+        WITH TABLE KEY Product = ls_pos-materialin Plant = ls_scope-plant.
+      IF sy-subrc IS INITIAL.
+        <fs_result>-PurchGroupIn = <fs_matincentro>-PurchasingGroup.
+      ENDIF.
+
+      "-----------------------------Material Sale----------------------------------------
+      IF ls_pos-materialout IS NOT INITIAL.
+        READ TABLE lt_matoutinfo ASSIGNING FIELD-SYMBOL(<fs_matoutinfo>)
+          WITH TABLE KEY Material = ls_pos-materialout.
         IF sy-subrc IS INITIAL.
-          <fs_result>-NivIngeTierNuevo = <fs_charc>-charcvaluetext.
+          <fs_result>-MaterialOutType      = <fs_matoutinfo>-MaterialType.
+          <fs_result>-MaterialGroupOut     = <fs_matoutinfo>-MaterialGroup.
+          <fs_result>-MaterialGroupOutDesc = <fs_matoutinfo>-MaterialGroupDesc.
+          <fs_result>-MaterialOutDesc      = <fs_matoutinfo>-MaterialDesc.
+        ENDIF.
+
+        READ TABLE lt_matoutcentro ASSIGNING FIELD-SYMBOL(<fs_matoutcentro>)
+          WITH TABLE KEY Product = ls_pos-materialout Plant = ls_scope-plant.
+        IF sy-subrc IS INITIAL.
+          <fs_result>-PurchGroupOut = <fs_matoutcentro>-PurchasingGroup.
         ENDIF.
       ENDIF.
 
-      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-        WITH TABLE KEY objctkey = ls_matrel-PreviousMaterial charcname = 'ARNES_NP_APTIV'.
+      "-----------------------------ZQM_PPAP_VIG-----------------------------------------
+      READ TABLE lt_ppap ASSIGNING FIELD-SYMBOL(<fs_ppap>)
+        WITH TABLE KEY Material = ls_pos-materialin.
       IF sy-subrc IS INITIAL.
-        <fs_result>-NumParteAptivActual = <fs_charc>-charcvaluetext.
+        <fs_result>-ApprovalStartDateIn   = <fs_ppap>-ValidityStart.
+        <fs_result>-ApprovalEndDateIn     = <fs_ppap>-ValidityEnd.
+        <fs_result>-ApprovalPromiseDateIn = <fs_ppap>-PromiseDate.
       ENDIF.
-
-      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-        WITH TABLE KEY objctkey = ls_matrel-ArnesProductoTerminado charcname = 'ARNES_NP_APTIV'.
-      IF sy-subrc IS INITIAL.
-        <fs_result>-NumParteAptivNuevo = <fs_charc>-charcvaluetext.
-      ENDIF.
-
-      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-        WITH TABLE KEY objctkey = ls_matrel-PreviousMaterial charcname = 'ARNES_NP_OEM'.
-      IF sy-subrc IS INITIAL.
-        <fs_result>-NumParteOEMActual = <fs_charc>-charcvaluetext.
-      ENDIF.
-
-      READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-        WITH TABLE KEY objctkey = ls_matrel-ArnesProductoTerminado charcname = 'ARNES_NP_OEM'.
-      IF sy-subrc IS INITIAL.
-        <fs_result>-NumParteOEMNuevo = <fs_charc>-charcvaluetext.
-      ENDIF.
-    ENDIF.
-
-    " Plataforma, Familia, Año Modelo e Plano Carta Actual vêm da Estructura Sale (12)
-    READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-StructureOutMaterial charcname = 'ARNES_PLATAFORMA'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-Platform = <fs_charc>-charcvaluetext.
-    ENDIF.
-
-    READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-StructureOutMaterial charcname = 'ARNES_FAMILIA'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-Family = <fs_charc>-charcvaluetext.
-    ENDIF.
-
-    READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-StructureOutMaterial charcname = 'ARNES_A_MODELO'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-ModelYear = <fs_charc>-charcvaluetext.
-    ENDIF.
-
-    READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-StructureOutMaterial charcname = 'PLANO_CARTA'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-StructureOutDrawing = <fs_charc>-charcvaluetext.
-    ENDIF.
-
-    " Plano Carta da Estructura Entra (17)
-    READ TABLE lt_charc_arnes ASSIGNING <fs_charc>
-      WITH TABLE KEY objctkey = <fs_result>-StructureInMaterial charcname = 'PLANO_CARTA'.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-StructureInDrawing = <fs_charc>-charcvaluetext.
-    ENDIF.
-
-    READ TABLE lt_StructureOutDesc ASSIGNING FIELD-SYMBOL(<fs_structout>)
-      WITH TABLE KEY product = <fs_result>-StructureOutMaterial.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-StructureOutDesc = <fs_structout>-ProductName.
-    ENDIF.
-
-    "-----------------------------Material Entra---------------------------------------
-    READ TABLE lt_matininfo ASSIGNING FIELD-SYMBOL(<fs_matininfo>)
-      WITH TABLE KEY Material = ls_pos-materialin.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-MaterialInType      = <fs_matininfo>-MaterialType.
-      <fs_result>-MaterialGroupIn     = <fs_matininfo>-MaterialGroup.
-      <fs_result>-MaterialGroupInDesc = <fs_matininfo>-MaterialGroupDesc.
-      <fs_result>-MaterialInDesc      = <fs_matininfo>-MaterialDesc.
-    ENDIF.
-
-    READ TABLE lt_matincentro ASSIGNING FIELD-SYMBOL(<fs_matincentro>)
-      WITH TABLE KEY Product = ls_pos-materialin Plant = ls_scope-plant.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-PurchGroupIn = <fs_matincentro>-PurchasingGroup.
-    ENDIF.
-
-    "-----------------------------Material Sale----------------------------------------
-    IF ls_pos-materialout IS NOT INITIAL.
-      READ TABLE lt_matoutinfo ASSIGNING FIELD-SYMBOL(<fs_matoutinfo>)
-        WITH TABLE KEY Material = ls_pos-materialout.
-      IF sy-subrc IS INITIAL.
-        <fs_result>-MaterialOutType      = <fs_matoutinfo>-MaterialType.
-        <fs_result>-MaterialGroupOut     = <fs_matoutinfo>-MaterialGroup.
-        <fs_result>-MaterialGroupOutDesc = <fs_matoutinfo>-MaterialGroupDesc.
-        <fs_result>-MaterialOutDesc      = <fs_matoutinfo>-MaterialDesc.
-      ENDIF.
-
-      READ TABLE lt_matoutcentro ASSIGNING FIELD-SYMBOL(<fs_matoutcentro>)
-        WITH TABLE KEY Product = ls_pos-materialout Plant = ls_scope-plant.
-      IF sy-subrc IS INITIAL.
-        <fs_result>-PurchGroupOut = <fs_matoutcentro>-PurchasingGroup.
-      ENDIF.
-    ENDIF.
-
-    "-----------------------------ZQM_PPAP_VIG-----------------------------------------
-    READ TABLE lt_ppap ASSIGNING FIELD-SYMBOL(<fs_ppap>)
-      WITH TABLE KEY Material = ls_pos-materialin.
-    IF sy-subrc IS INITIAL.
-      <fs_result>-ApprovalStartDateIn   = <fs_ppap>-ValidityStart.
-      <fs_result>-ApprovalEndDateIn     = <fs_ppap>-ValidityEnd.
-      <fs_result>-ApprovalPromiseDateIn = <fs_ppap>-PromiseDate.
-    ENDIF.
-  ENDLOOP.
-ENDMETHOD.
+    ENDLOOP.
+  ENDMETHOD.
 ENDCLASS.

@@ -113,8 +113,6 @@ CLASS zcl_pp_query_sumarizado DEFINITION
       RETURNING VALUE(rt_parents) TYPE tt_parent.
 ENDCLASS.
 
-
-
 CLASS zcl_pp_query_sumarizado IMPLEMENTATION.
   METHOD get_filter.
     IF line_exists( it_pairs[ name = iv_name ] ).
@@ -525,7 +523,7 @@ CLASS zcl_pp_query_sumarizado IMPLEMENTATION.
 
     " Todas as versões de todas as posições dos BOMs em escopo, num único acesso.
     " Sem filtro de LKENZ: a versão eliminada pelo ECN é a âncora do lado Dice.
-    SELECT stlnr, stlkn, stpoz, posnr, idnrk, menge, meins, datuv, aennr, lkenz
+    SELECT stlnr, stlkn, stpoz, posnr, idnrk, menge, meins, datuv, aennr, lkenz, ecn_to
       FROM stpo
       FOR ALL ENTRIES IN @it_boms
       WHERE stlty = @lv_STLTY
@@ -563,6 +561,13 @@ CLASS zcl_pp_query_sumarizado IMPLEMENTATION.
         IF ls_ver-lkenz IS INITIAL.
           INSERT CORRESPONDING ty_side( ls_ver ) INTO TABLE lt_debe_idx.
         ENDIF.
+
+      ELSEIF ls_ver-ecn_to = ls_bom_key-ecnnumber
+         AND ls_ver-lkenz IS INITIAL.
+        " O folio encerrou a validade desta versao e nao criou linha nova.
+        INSERT VALUE ty_pos( stlnr = ls_ver-stlnr
+                             posnr = ls_ver-posnr ) INTO TABLE lt_pos.
+        INSERT CORRESPONDING ty_side( ls_ver ) INTO TABLE lt_dice_idx.
 
       ELSEIF ls_ver-lkenz IS INITIAL
          AND ls_ver-datuv  < ls_bom_key-datuv.

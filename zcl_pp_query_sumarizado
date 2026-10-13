@@ -276,6 +276,9 @@ CLASS zcl_pp_query_sumarizado IMPLEMENTATION.
 
       IF sy-subrc = 0.
         ls_result-ItemParDice = ls_parent-idnrk.
+      ELSE.
+        " Pai não mudou: só o componente. Repete o Item Parent Debe.
+        ls_result-ItemParDice = <fs_item>-material.
       ENDIF.
 
       IF <fs_item>-itemdice IS NOT INITIAL.

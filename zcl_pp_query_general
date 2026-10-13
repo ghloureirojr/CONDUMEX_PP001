@@ -144,8 +144,6 @@ CLASS zcl_pp_query_general DEFINITION
       RETURNING VALUE(rv_date) TYPE dats.
 ENDCLASS.
 
-
-
 CLASS zcl_pp_query_general IMPLEMENTATION.
   METHOD if_rap_query_provider~select.
     DATA: lt_result TYPE STANDARD TABLE OF zi_pp_general,
@@ -273,10 +271,18 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD get_bom_positions.
+    TYPES: BEGIN OF ty_pos,
+             stlnr TYPE stnum,
+             posnr TYPE sposn,
+           END OF ty_pos.
+
     DATA: lt_scope_idx TYPE SORTED TABLE OF ty_scope WITH NON-UNIQUE KEY bomnumber,
           lt_nodes     TYPE SORTED TABLE OF ty_node  WITH NON-UNIQUE KEY stlnr stlkn,
+          lt_pos       TYPE SORTED TABLE OF ty_pos   WITH UNIQUE KEY stlnr posnr,
           lt_in        TYPE SORTED TABLE OF ty_side  WITH UNIQUE KEY stlnr posnr,
-          lt_out       TYPE SORTED TABLE OF ty_side  WITH UNIQUE KEY stlnr posnr.
+          lt_out       TYPE SORTED TABLE OF ty_side  WITH UNIQUE KEY stlnr posnr,
+          lv_has_in    TYPE abap_bool,
+          lv_has_out   TYPE abap_bool.
 
     CHECK it_scope IS NOT INITIAL.
 
@@ -293,7 +299,7 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
 
     " Todas as versões de todas as posições dos BOMs em escopo.
     " Sem filtro de LKENZ: a versão eliminada pelo ECN é a âncora do Material Sale.
-    SELECT stlnr, stlkn, stpoz, posnr, idnrk, menge, meins, datuv, aennr, lkenz
+    SELECT stlnr, stlkn, stpoz, posnr, idnrk, menge, meins, datuv, aennr, lkenz, ecn_to
       FROM stpo
       FOR ALL ENTRIES IN @it_scope
       WHERE stlty = @c_stlty
@@ -318,37 +324,53 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
 
         " Material Entra (53, 58, 59) e Fecha de Efectividad (43)
         IF ls_ver-lkenz IS INITIAL.
+          INSERT VALUE #( stlnr = ls_ver-stlnr
+                          posnr = ls_ver-posnr ) INTO TABLE lt_pos.
           INSERT CORRESPONDING ty_side( ls_ver ) INTO TABLE lt_in.
         ENDIF.
 
+      ELSEIF ls_ver-ecn_to = ls_scope-ecnnumber
+         AND ls_ver-lkenz IS INITIAL.
+        " O folio encerrou a validade desta versao e nao criou linha nova.
+        INSERT VALUE #( stlnr = ls_ver-stlnr
+                        posnr = ls_ver-posnr ) INTO TABLE lt_pos.
+        INSERT CORRESPONDING ty_side( ls_ver ) INTO TABLE lt_out.
+
       ELSEIF ls_ver-lkenz IS INITIAL
          AND ls_ver-datuv  < ls_scope-ecnissuedate.
-        " Material Sale (45, 50, 51): derivação de AENRA
+        " Material Sale (45, 50, 51): derivação de AENRA.
+        " Nao marca a posicao: so preenche o lado Sale de uma alteracao.
         INSERT CORRESPONDING ty_side( ls_ver ) INTO TABLE lt_out.
       ENDIF.
     ENDLOOP.
 
-    LOOP AT lt_in INTO DATA(ls_in).
+    LOOP AT lt_pos INTO DATA(ls_pos).
       READ TABLE lt_scope_idx INTO DATA(ls_scope_pos)
-        WITH TABLE KEY bomnumber = ls_in-stlnr.
+        WITH TABLE KEY bomnumber = ls_pos-stlnr.
       CHECK sy-subrc = 0.
 
-      INSERT VALUE ty_bompos( ecnnumber  = ls_scope_pos-ecnnumber
-                              stlnr      = ls_in-stlnr
-                              posnr      = ls_in-posnr
-                              datuv      = ls_in-datuv
-                              materialin = ls_in-idnrk
-                              qtyin      = ls_in-menge
-                              unitin     = ls_in-meins ) INTO TABLE rt_bompos
-        ASSIGNING FIELD-SYMBOL(<fs_bompos>).
+      READ TABLE lt_in INTO DATA(ls_in)
+        WITH TABLE KEY stlnr = ls_pos-stlnr posnr = ls_pos-posnr.
+      lv_has_in = xsdbool( sy-subrc = 0 ).
 
       READ TABLE lt_out INTO DATA(ls_out)
-        WITH TABLE KEY stlnr = ls_in-stlnr posnr = ls_in-posnr.
-      IF sy-subrc = 0.
-        <fs_bompos>-materialout = ls_out-idnrk.
-        <fs_bompos>-qtyout      = ls_out-menge.
-        <fs_bompos>-unitout     = ls_out-meins.
-      ENDIF.
+        WITH TABLE KEY stlnr = ls_pos-stlnr posnr = ls_pos-posnr.
+      lv_has_out = xsdbool( sy-subrc = 0 ).
+
+      INSERT VALUE ty_bompos(
+          ecnnumber   = ls_scope_pos-ecnnumber
+          stlnr       = ls_pos-stlnr
+          posnr       = ls_pos-posnr
+          datuv       = COND #( WHEN lv_has_in = abap_true
+                                THEN ls_in-datuv
+                                ELSE ls_scope_pos-ecnissuedate )
+          materialin  = COND #( WHEN lv_has_in = abap_true THEN ls_in-idnrk )
+          qtyin       = COND #( WHEN lv_has_in = abap_true THEN ls_in-menge )
+          unitin      = COND #( WHEN lv_has_in = abap_true THEN ls_in-meins )
+          materialout = COND #( WHEN lv_has_out = abap_true THEN ls_out-idnrk )
+          qtyout      = COND #( WHEN lv_has_out = abap_true THEN ls_out-menge )
+          unitout     = COND #( WHEN lv_has_out = abap_true THEN ls_out-meins )
+        ) INTO TABLE rt_bompos.
     ENDLOOP.
   ENDMETHOD.
 
@@ -612,8 +634,11 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
     IF rg_prtmat IS NOT INITIAL.
       DATA lt_keep TYPE SORTED TABLE OF ty_node WITH UNIQUE KEY stlnr stlkn.
 
-      LOOP AT lt_bompos INTO DATA(ls_chk) WHERE materialin IN rg_prtmat.
-        INSERT VALUE ty_node( stlnr = ls_chk-stlnr ) INTO TABLE lt_keep.
+      LOOP AT lt_bompos INTO DATA(ls_chk).
+        IF ls_chk-materialin  IN rg_prtmat
+        OR ls_chk-materialout IN rg_prtmat.
+          INSERT VALUE ty_node( stlnr = ls_chk-stlnr ) INTO TABLE lt_keep.
+        ENDIF.
       ENDLOOP.
 
       LOOP AT lt_bompos ASSIGNING FIELD-SYMBOL(<fs_del>).
@@ -691,6 +716,7 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
     lt_materialin  = CORRESPONDING #( lt_bompos DISCARDING DUPLICATES MAPPING material = materialin ).
     lt_materialout = CORRESPONDING #( lt_bompos DISCARDING DUPLICATES MAPPING material = materialout ).
 
+    DELETE lt_materialin  WHERE material IS INITIAL.
     DELETE lt_materialout WHERE material IS INITIAL.
 
     IF lt_materialin IS NOT INITIAL.
@@ -721,8 +747,10 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
         WITH TABLE KEY id COMPONENTS ecnnumber = ls_bp-ecnnumber bomnumber = ls_bp-stlnr.
       CHECK sy-subrc = 0.
 
-      INSERT VALUE ty_matplant( material = ls_bp-materialin
-                                plant    = ls_sc-plant ) INTO TABLE lt_matinplant.
+      IF ls_bp-materialin IS NOT INITIAL.
+        INSERT VALUE ty_matplant( material = ls_bp-materialin
+                                  plant    = ls_sc-plant ) INTO TABLE lt_matinplant.
+      ENDIF.
 
       IF ls_bp-materialout IS NOT INITIAL.
         INSERT VALUE ty_matplant( material = ls_bp-materialout

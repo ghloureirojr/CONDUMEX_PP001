@@ -149,6 +149,13 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
     DATA: lt_result TYPE STANDARD TABLE OF zi_pp_general,
           lt_page   TYPE STANDARD TABLE OF zi_pp_general.
 
+    " Paginação e ordenação antes de get_data. Se a leitura estourar,
+    " o framework não troca o erro real por "get_paging missing".
+    DATA(lo_paging)    = io_request->get_paging( ).
+    DATA(lv_offset)    = lo_paging->get_offset( ).
+    DATA(lv_page_size) = lo_paging->get_page_size( ).
+    io_request->get_sort_elements( ).
+
     TRY.
         TRY.
             DATA(lt_pairs) = io_request->get_filter( )->get_as_ranges( ).
@@ -176,10 +183,6 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
           io_response->set_total_number_of_records( CONV int8( lines( lt_result ) ) ).
         ENDIF.
 
-        DATA(lo_paging)    = io_request->get_paging( ).
-        DATA(lv_offset)    = lo_paging->get_offset( ).
-        DATA(lv_page_size) = lo_paging->get_page_size( ).
-
         IF lv_offset > 0 OR lv_page_size <> if_rap_query_paging=>page_size_unlimited.
           LOOP AT lt_result INTO DATA(ls_page) FROM lv_offset + 1.
             APPEND ls_page TO lt_page.
@@ -195,14 +198,8 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
 
         io_response->set_data( lt_result ).
 
-      CATCH cx_root.
-        IF io_request->is_data_requested( ).
-          io_response->set_data( lt_result ).
-        ENDIF.
-
-        IF io_request->is_total_numb_of_rec_requested( ).
-          io_response->set_total_number_of_records( 0 ).
-        ENDIF.
+      CATCH cx_root INTO DATA(lx_error).
+        RAISE EXCEPTION NEW cx_rap_query_provider( previous = lx_error ).
     ENDTRY.
   ENDMETHOD.
 
@@ -703,13 +700,19 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
     DELETE ADJACENT DUPLICATES FROM lt_np_tier COMPARING objctkey.
 
     IF lt_np_tier IS NOT INITIAL.
+      DATA lt_np_tier_all TYPE STANDARD TABLE OF ty_charc.
+
       SELECT objectkey, charcname, charcformat, charcvaluetext, charcvaluefrom
         FROM zi_pp_classification
         FOR ALL ENTRIES IN @lt_np_tier
         WHERE ObjectKey = @lt_np_tier-objctkey
           AND classtype = @c_klart_a
           AND charcname = 'NIVEL_INGENIERIA'
-        INTO TABLE @lt_np_tier_read.
+        INTO TABLE @lt_np_tier_all.
+
+      SORT lt_np_tier_all BY objctkey charcname.
+      DELETE ADJACENT DUPLICATES FROM lt_np_tier_all COMPARING objctkey charcname.
+      lt_np_tier_read = lt_np_tier_all.
     ENDIF.
 
     " --- Mestre de materiais dos dois lados ---
@@ -724,7 +727,11 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
         FROM zi_pp_material_wrapper
         FOR ALL ENTRIES IN @lt_materialin
         WHERE Material = @lt_materialin-material
-        INTO TABLE @lt_matininfo.
+        INTO TABLE @DATA(lt_matininfo_all).
+
+      SORT lt_matininfo_all BY material.
+      DELETE ADJACENT DUPLICATES FROM lt_matininfo_all COMPARING material.
+      lt_matininfo = lt_matininfo_all.
 
       SELECT *
         FROM zi_pp_ppap_wrapper
@@ -738,7 +745,11 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
         FROM zi_pp_material_wrapper
         FOR ALL ENTRIES IN @lt_materialout
         WHERE Material = @lt_materialout-material
-        INTO TABLE @lt_matoutinfo.
+        INTO TABLE @DATA(lt_matoutinfo_all).
+
+      SORT lt_matoutinfo_all BY material.
+      DELETE ADJACENT DUPLICATES FROM lt_matoutinfo_all COMPARING material.
+      lt_matoutinfo = lt_matoutinfo_all.
     ENDIF.
 
     " --- Grupo de compras por centro ---
@@ -764,7 +775,11 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
         FOR ALL ENTRIES IN @lt_matinplant
         WHERE product = @lt_matinplant-material
           AND plant   = @lt_matinplant-plant
-        INTO TABLE @lt_matincentro.
+        INTO TABLE @DATA(lt_matincentro_all).
+
+      SORT lt_matincentro_all BY product plant.
+      DELETE ADJACENT DUPLICATES FROM lt_matincentro_all COMPARING product plant.
+      lt_matincentro = lt_matincentro_all.
     ENDIF.
 
     IF lt_matoutplant IS NOT INITIAL.
@@ -773,7 +788,11 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
         FOR ALL ENTRIES IN @lt_matoutplant
         WHERE product = @lt_matoutplant-material
           AND plant   = @lt_matoutplant-plant
-        INTO TABLE @lt_matoutcentro.
+        INTO TABLE @DATA(lt_matoutcentro_all).
+
+      SORT lt_matoutcentro_all BY product plant.
+      DELETE ADJACENT DUPLICATES FROM lt_matoutcentro_all COMPARING product plant.
+      lt_matoutcentro = lt_matoutcentro_all.
     ENDIF.
 
     " --- Descrição da Estructura Sale ---
@@ -787,7 +806,11 @@ CLASS zcl_pp_query_general IMPLEMENTATION.
         FOR ALL ENTRIES IN @lt_matstruoutdesc
         WHERE product  = @lt_matstruoutdesc-product
           AND Language = @sy-langu
-        INTO TABLE @lt_StructureOutDesc.
+        INTO TABLE @DATA(lt_structdesc_all).
+
+      SORT lt_structdesc_all BY product.
+      DELETE ADJACENT DUPLICATES FROM lt_structdesc_all COMPARING product.
+      lt_StructureOutDesc = lt_structdesc_all.
     ENDIF.
 
     " --- Montagem do resultado ---

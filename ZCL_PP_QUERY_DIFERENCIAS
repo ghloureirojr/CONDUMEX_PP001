@@ -1,4 +1,4 @@
-CLASS zcl_pp_query_diferencias DEFINITION
+CLASS ZCL_PP_QUERY_DIFERENCIAS DEFINITION
   PUBLIC
   FINAL
   CREATE PUBLIC .
@@ -373,7 +373,11 @@ CLASS zcl_pp_query_diferencias IMPLEMENTATION.
 
     DATA(lv_week_end) = lv_week_start + 6.   " domingo, conforme EF
 
-    SELECT Product, Plant, ResvnItmRequiredQtyInBaseUnit, MatlCompRequirementDate
+    " Chave do item no SELECT: FOR ALL ENTRIES descarta linhas iguais
+    SELECT Reservation, ReservationItem, RecordType,
+           Product, Plant,
+           ResvnItmRequiredQtyInBaseUnit, ResvnItmWithdrawnQtyInBaseUnit,
+           MatlCompRequirementDate
       FROM I_ReservationDocumentItem
       FOR ALL ENTRIES IN @it_material
       WHERE Product = @it_material-material
@@ -391,11 +395,18 @@ CLASS zcl_pp_query_diferencias IMPLEMENTATION.
         APPEND VALUE #( material = ls_resb-Product ) TO rt_volumes ASSIGNING <fs_vol>.
       ENDIF.
 
-      " Total = todos os requerimentos a partir do início da semana corrente
-      <fs_vol>-totalvol = <fs_vol>-totalvol + ls_resb-ResvnItmRequiredQtyInBaseUnit.
+      " Em aberto = requerida menos baixada; negativo conta zero
+      DATA(lv_open) = ls_resb-ResvnItmRequiredQtyInBaseUnit
+                    - ls_resb-ResvnItmWithdrawnQtyInBaseUnit.
+      IF lv_open < 0.
+        CLEAR lv_open.
+      ENDIF.
+
+      " Total = em aberto a partir do início da semana corrente
+      <fs_vol>-totalvol = <fs_vol>-totalvol + lv_open.
 
       IF ls_resb-MatlCompRequirementDate BETWEEN lv_week_start AND lv_week_end.
-        <fs_vol>-weeklyvol = <fs_vol>-weeklyvol + ls_resb-ResvnItmRequiredQtyInBaseUnit.
+        <fs_vol>-weeklyvol = <fs_vol>-weeklyvol + lv_open.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
